@@ -55,6 +55,7 @@ let unreadUnsubs = {};        // { matchId: unsubscribe }
 // ===== Helpers DOM =====
 const $ = (id) => document.getElementById(id);
 const screens = {
+  landing: $("landing-screen"),
   auth: $("auth-screen"),
   onboarding: $("onboarding-screen"),
   app: $("app-screen")
@@ -63,6 +64,21 @@ function showScreen(name) {
   Object.values(screens).forEach((s) => s.classList.add("hidden"));
   screens[name].classList.remove("hidden");
 }
+
+// Toast (notification legere)
+let toastTimer = null;
+function toast(msg) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add("hidden"), 2600);
+}
+
+// ----- Landing -----
+$("btn-landing-start").addEventListener("click", () => showScreen("auth"));
+$("btn-landing-cgu").addEventListener("click", () => $("cgu-panel").classList.remove("hidden"));
+$("btn-auth-back").addEventListener("click", () => showScreen("landing"));
 
 function translateError(code) {
   const m = {
@@ -152,6 +168,8 @@ $("btn-submit").addEventListener("click", async () => {
       geohash: null,
       profileComplete: false,
       visibility: { age: true, distance: true, bio: true, interests: true, discoverable: true },
+      searchPrefs: { maxDistance: 50, ageMin: 18, ageMax: 80 },
+      blocked: [],
       consent: { age18: true, dataProcessing: true, consentedAt: serverTimestamp() },
       createdAt: serverTimestamp()
     });
@@ -390,6 +408,16 @@ function renderProfile() {
   $("profile-age").textContent = calculateAge(p.birthdate) + " ans";
   $("profile-bio").textContent = p.bio || "";
 
+  // Interets
+  const pi = $("profile-interests");
+  pi.innerHTML = "";
+  (p.interests || []).forEach((it) => {
+    const c = document.createElement("span");
+    c.className = "chip-static";
+    c.textContent = it;
+    pi.appendChild(c);
+  });
+
   // Etat des toggles de visibilite
   const v = p.visibility || {};
   $("vis-age").checked = v.age !== false;
@@ -397,6 +425,9 @@ function renderProfile() {
   $("vis-bio").checked = v.bio !== false;
   $("vis-interests").checked = v.interests !== false;
   $("vis-discoverable").checked = v.discoverable !== false;
+
+  // Preferences de recherche
+  initSearchPrefs();
 
   // Etat geoloc
   if (p.location) {
@@ -514,7 +545,10 @@ async function loadSwipeQueue() {
   }
 
   const center = [currentProfile.location.lat, currentProfile.location.lng];
-  const bounds = geohashQueryBounds(center, SEARCH_RADIUS_M);
+  const prefs = currentProfile.searchPrefs || { maxDistance: 50, ageMin: 18, ageMax: 80 };
+  const maxRadius = (prefs.maxDistance || 50) * 1000;
+  const blocked = currentProfile.blocked || [];
+  const bounds = geohashQueryBounds(center, maxRadius);
   const promises = bounds.map((b) =>
     getDocs(query(collection(db, "users"), orderBy("geohash"), startAt(b[0]), endAt(b[1])))
   );
@@ -530,13 +564,18 @@ async function loadSwipeQueue() {
     for (const d of snap.docs) {
       if (d.id === currentUser.uid) continue;       // pas moi
       if (seen.has(d.id)) continue;                 // deja vu
+      if (blocked.includes(d.id)) continue;         // bloque
       const data = d.data();
       if (!data.location || !data.profileComplete) continue;
       if (data.visibility && data.visibility.discoverable === false) continue;
       if (!matchesSeeking(currentProfile, data)) continue;
 
+      // Filtre par tranche d'age
+      const age = calculateAge(data.birthdate);
+      if (age < prefs.ageMin || age > prefs.ageMax) continue;
+
       const distKm = distanceBetween([data.location.lat, data.location.lng], center);
-      if (distKm * 1000 > SEARCH_RADIUS_M) continue;
+      if (distKm * 1000 > maxRadius) continue;
 
       queue.push({ uid: d.id, data, distanceKm: distKm });
     }
@@ -941,9 +980,317 @@ $("btn-send").addEventListener("click", sendMessage);
 $("chat-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
 
 // ============================================================
-// ORCHESTRATION : etat de connexion
+// PROFIL DETAILLE (au tap sur une carte ou bouton info)
 // ============================================================
-onAuthStateChanged(auth, async (user) => {
+let detailCurrent = null;
+
+function openDetail(item) {
+  detailCurrent = item;
+  const d = item.data;
+  const v = d.visibility || {};
+  const gallery = $("detail-gallery");
+  gallery.innerHTML = "";
+  (d.photos || []).forEach((ph) => {
+    const img = document.createElement("img");
+    img.src = ph.url;
+    gallery.appendChild(img);
+  });
+  $("detail-name").textContent = d.pseudo;
+  $("detail-age").textContent = (v.age !== false) ? calculateAge(d.birthdate) + " ans" : "";
+  $("detail-distance").textContent = (v.distance !== false) ? formatDistance(item.distanceKm) : "";
+  $("detail-bio").textContent = (v.bio !== false) ? (d.bio || "") : "";
+  const di = $("detail-interests");
+  di.innerHTML = "";
+  if (v.interests !== false) {
+    (d.interests || []).forEach((it) => {
+      const c = document.createElement("span");
+      c.className = "chip-static";
+      c.textContent = it;
+      di.appendChild(c);
+    });
+  }
+  $("detail-panel").classList.remove("hidden");
+}
+$("btn-detail-close").addEventListener("click", () => $("detail-panel").classList.add("hidden"));
+$("btn-info").addEventListener("click", () => {
+  if (swipeQueue.length > 0) openDetail(swipeQueue[0]);
+});
+
+// ============================================================
+// SIGNALEMENT + BLOCAGE
+// ============================================================
+let reportTarget = null;
+
+function openReport(uid, fromChat) {
+  reportTarget = { uid, fromChat: !!fromChat };
+  document.querySelectorAll('input[name="report-reason"]').forEach((r) => (r.checked = false));
+  $("report-status").textContent = "";
+  $("report-modal").classList.remove("hidden");
+}
+$("btn-report").addEventListener("click", () => {
+  if (detailCurrent) openReport(detailCurrent.uid, false);
+});
+$("btn-cancel-report").addEventListener("click", () => $("report-modal").classList.add("hidden"));
+
+$("btn-confirm-report").addEventListener("click", async () => {
+  const reason = document.querySelector('input[name="report-reason"]:checked');
+  if (!reason) { $("report-status").textContent = "Choisis une raison."; $("report-status").className = "status error"; return; }
+  try {
+    // Enregistre le signalement
+    await addDoc(collection(db, "reports"), {
+      reporter: currentUser.uid,
+      reported: reportTarget.uid,
+      reason: reason.value,
+      at: serverTimestamp()
+    });
+    // Bloque l'utilisateur (ajoute a ma liste de bloques)
+    const blocked = currentProfile.blocked || [];
+    if (!blocked.includes(reportTarget.uid)) blocked.push(reportTarget.uid);
+    await updateDoc(doc(db, "users", currentUser.uid), { blocked });
+    currentProfile.blocked = blocked;
+
+    $("report-modal").classList.add("hidden");
+    $("detail-panel").classList.add("hidden");
+    if (reportTarget.fromChat) {
+      $("chat-panel").classList.add("hidden");
+      switchView("messages");
+    }
+    toast("Profil signale et bloque. Merci.");
+    loadSwipeQueue();
+  } catch (e) {
+    $("report-status").textContent = "Erreur : " + e.message;
+    $("report-status").className = "status error";
+  }
+});
+
+// ============================================================
+// MENU CONVERSATION (signaler / unmatch)
+// ============================================================
+$("btn-chat-menu").addEventListener("click", () => $("chat-menu-modal").classList.remove("hidden"));
+$("btn-chat-menu-cancel").addEventListener("click", () => $("chat-menu-modal").classList.add("hidden"));
+$("btn-chat-report").addEventListener("click", () => {
+  $("chat-menu-modal").classList.add("hidden");
+  if (activeChat) openReport(activeChat.otherUid, true);
+});
+$("btn-chat-unmatch").addEventListener("click", async () => {
+  if (!activeChat) return;
+  if (!confirm("Supprimer ce match ? La conversation sera perdue.")) return;
+  try {
+    await deleteDoc(doc(db, "matches", activeChat.matchId));
+    $("chat-menu-modal").classList.add("hidden");
+    $("chat-panel").classList.add("hidden");
+    switchView("messages");
+    toast("Match supprime.");
+  } catch (e) { toast("Erreur : " + e.message); }
+});
+
+// ============================================================
+// QUI M'A LIKE
+// ============================================================
+$("btn-open-likes").addEventListener("click", openLikes);
+$("btn-likes-close").addEventListener("click", () => $("likes-panel").classList.add("hidden"));
+
+async function openLikes() {
+  $("likes-panel").classList.remove("hidden");
+  const grid = $("likes-grid");
+  grid.innerHTML = "";
+  $("no-likes").classList.add("hidden");
+
+  // On cherche les gens qui m'ont like (leur swipe sur moi = like)
+  // Necessite de parcourir : approche simple via collectionGroup serait mieux,
+  // mais on reste compatible : on lit les swipes ou la cible est moi.
+  try {
+    const likers = [];
+    // On parcourt mes matchs potentiels : ceux qui m'ont like sans que je les aie vus
+    const seenSnap = await getDocs(collection(db, "users", currentUser.uid, "swipes"));
+    const iSwiped = new Set();
+    seenSnap.forEach((d) => iSwiped.add(d.id));
+
+    // On lit la sous-collection swipes de chaque user proche (limite : zone geo)
+    if (currentProfile.location) {
+      const center = [currentProfile.location.lat, currentProfile.location.lng];
+      const bounds = geohashQueryBounds(center, SEARCH_RADIUS_M);
+      const snaps = await Promise.all(bounds.map((b) =>
+        getDocs(query(collection(db, "users"), orderBy("geohash"), startAt(b[0]), endAt(b[1])))
+      ));
+      for (const snap of snaps) {
+        for (const userDoc of snap.docs) {
+          if (userDoc.id === currentUser.uid) continue;
+          if (iSwiped.has(userDoc.id)) continue; // deja traite
+          try {
+            const theirSwipe = await getDoc(doc(db, "users", userDoc.id, "swipes", currentUser.uid));
+            if (theirSwipe.exists() && theirSwipe.data().action === "like") {
+              likers.push({ uid: userDoc.id, data: userDoc.data() });
+            }
+          } catch (e) {}
+        }
+      }
+    }
+
+    if (likers.length === 0) {
+      $("no-likes").classList.remove("hidden");
+      return;
+    }
+    likers.forEach((l) => {
+      const card = document.createElement("div");
+      card.className = "like-card";
+      const img = document.createElement("img");
+      if (l.data.photos && l.data.photos[0]) img.src = l.data.photos[0].url;
+      const name = document.createElement("div");
+      name.className = "like-name";
+      name.textContent = l.data.pseudo + ", " + calculateAge(l.data.birthdate);
+      card.appendChild(img);
+      card.appendChild(name);
+      // Au clic : like en retour -> match direct
+      card.addEventListener("click", async () => {
+        await setDoc(doc(db, "users", currentUser.uid, "swipes", l.uid), { action: "like", at: serverTimestamp() });
+        const dist = currentProfile.location
+          ? distanceBetween([l.data.location.lat, l.data.location.lng], [currentProfile.location.lat, currentProfile.location.lng])
+          : 0;
+        await createMatch({ uid: l.uid, data: l.data, distanceKm: dist });
+        $("likes-panel").classList.add("hidden");
+      });
+      grid.appendChild(card);
+    });
+  } catch (e) {
+    console.error("openLikes:", e);
+    $("no-likes").classList.remove("hidden");
+  }
+}
+
+// ============================================================
+// EDITION DU PROFIL
+// ============================================================
+let editPhotos = [];
+let editInterests = [];
+
+$("btn-edit-profile").addEventListener("click", openEdit);
+$("btn-cancel-edit").addEventListener("click", () => $("edit-modal").classList.add("hidden"));
+
+function openEdit() {
+  editPhotos = [...(currentProfile.photos || [])];
+  editInterests = [...(currentProfile.interests || [])];
+  $("edit-bio").value = currentProfile.bio || "";
+  $("edit-bio-count").textContent = ($("edit-bio").value || "").length;
+  renderEditPhotos();
+  renderEditInterests();
+  $("edit-modal").classList.remove("hidden");
+}
+
+function renderEditPhotos() {
+  const grid = $("edit-photo-grid");
+  grid.innerHTML = "";
+  editPhotos.forEach((p, i) => {
+    const thumb = document.createElement("div");
+    thumb.className = "photo-thumb";
+    const img = document.createElement("img");
+    img.src = p.url;
+    const rm = document.createElement("button");
+    rm.className = "remove";
+    rm.textContent = "\u00d7";
+    rm.addEventListener("click", () => { editPhotos.splice(i, 1); renderEditPhotos(); });
+    thumb.appendChild(img);
+    thumb.appendChild(rm);
+    grid.appendChild(thumb);
+  });
+}
+
+function renderEditInterests() {
+  const box = $("edit-interests");
+  box.innerHTML = "";
+  INTERESTS.forEach((label) => {
+    const chip = document.createElement("button");
+    chip.className = "chip" + (editInterests.includes(label) ? " selected" : "");
+    chip.textContent = label;
+    chip.addEventListener("click", () => {
+      if (editInterests.includes(label)) editInterests = editInterests.filter((x) => x !== label);
+      else editInterests.push(label);
+      renderEditInterests();
+    });
+    box.appendChild(chip);
+  });
+}
+
+$("edit-bio").addEventListener("input", () => {
+  $("edit-bio-count").textContent = $("edit-bio").value.length;
+});
+
+$("btn-edit-add-photo").addEventListener("click", () => $("edit-photo-input").click());
+$("edit-photo-input").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (editPhotos.length >= 6) { $("edit-photo-status").textContent = "Maximum 6 photos."; return; }
+  $("edit-photo-status").textContent = "Traitement...";
+  try {
+    let dataUrl = await compressImage(file, 800, 0.7);
+    if (dataUrl.length > 900000) dataUrl = await compressImage(file, 600, 0.6);
+    editPhotos.push({ url: dataUrl });
+    renderEditPhotos();
+    $("edit-photo-status").textContent = "";
+  } catch (err) { $("edit-photo-status").textContent = "Erreur."; }
+  $("edit-photo-input").value = "";
+});
+
+$("btn-save-profile").addEventListener("click", async () => {
+  if (editPhotos.length < 1) { $("edit-photo-status").textContent = "Au moins une photo requise."; $("edit-photo-status").className = "status error"; return; }
+  try {
+    await updateDoc(doc(db, "users", currentUser.uid), {
+      photos: editPhotos,
+      bio: $("edit-bio").value.trim(),
+      interests: editInterests
+    });
+    currentProfile.photos = editPhotos;
+    currentProfile.bio = $("edit-bio").value.trim();
+    currentProfile.interests = editInterests;
+    $("edit-modal").classList.add("hidden");
+    renderProfile();
+    toast("Profil mis a jour.");
+  } catch (e) { $("edit-photo-status").textContent = "Erreur : " + e.message; }
+});
+
+// ============================================================
+// PREFERENCES DE RECHERCHE
+// ============================================================
+function initSearchPrefs() {
+  const p = currentProfile.searchPrefs || { maxDistance: 50, ageMin: 18, ageMax: 80 };
+  $("pref-distance").value = p.maxDistance;
+  $("pref-distance-val").textContent = p.maxDistance;
+  $("pref-age-min").value = p.ageMin;
+  $("pref-age-min-val").textContent = p.ageMin;
+  $("pref-age-max").value = p.ageMax;
+  $("pref-age-max-val").textContent = p.ageMax;
+}
+let prefTimer = null;
+function onPrefChange() {
+  $("pref-distance-val").textContent = $("pref-distance").value;
+  $("pref-age-min-val").textContent = $("pref-age-min").value;
+  $("pref-age-max-val").textContent = $("pref-age-max").value;
+  if (prefTimer) clearTimeout(prefTimer);
+  prefTimer = setTimeout(saveSearchPrefs, 600);
+}
+async function saveSearchPrefs() {
+  const searchPrefs = {
+    maxDistance: parseInt($("pref-distance").value, 10),
+    ageMin: parseInt($("pref-age-min").value, 10),
+    ageMax: parseInt($("pref-age-max").value, 10)
+  };
+  try {
+    await updateDoc(doc(db, "users", currentUser.uid), { searchPrefs });
+    currentProfile.searchPrefs = searchPrefs;
+    $("pref-status").textContent = "Preferences enregistrees.";
+    $("pref-status").className = "status success";
+    setTimeout(() => ($("pref-status").textContent = ""), 1500);
+  } catch (e) { $("pref-status").textContent = "Erreur."; }
+}
+["pref-distance", "pref-age-min", "pref-age-max"].forEach((id) => $(id).addEventListener("input", onPrefChange));
+
+// ============================================================
+// CGU
+// ============================================================
+$("btn-show-cgu").addEventListener("click", () => $("cgu-panel").classList.remove("hidden"));
+$("btn-cgu-close").addEventListener("click", () => $("cgu-panel").classList.add("hidden"));
+
+
   // Nettoyage des listeners
   if (matchesUnsub) { matchesUnsub(); matchesUnsub = null; }
   if (listDisplayUnsub) { listDisplayUnsub(); listDisplayUnsub = null; }
@@ -955,7 +1302,7 @@ onAuthStateChanged(auth, async (user) => {
   if (!user) {
     currentUser = null;
     currentProfile = null;
-    showScreen("auth");
+    showScreen("landing");
     return;
   }
 
