@@ -416,3 +416,109 @@ input, select, textarea {
 }
 /* On garde des champs visuellement coherents malgre le 16px */
 .chat-input-row input { font-size: 16px !important; }
+
+/* ============================================================ */
+/* LANDING                                                      */
+/* ============================================================ */
+.landing-screen { align-items: center; justify-content: center; padding: 30px 24px; }
+.landing-inner { width: 100%; max-width: 420px; text-align: center; animation: rise 0.7s cubic-bezier(0.2,0.8,0.2,1); }
+.brand-mark.big { width: 80px; height: 80px; border-radius: 26px; margin: 0 auto 24px; }
+.brand-mark.big::after { inset: 20px; border-width: 3px; border-radius: 11px; }
+.landing-title { font-family: var(--font-display); font-size: 2.6rem; font-weight: 700; margin-bottom: 12px; background: linear-gradient(135deg, #fff, var(--primary-soft)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.landing-tagline { color: var(--text-muted); font-size: 1.05rem; line-height: 1.5; margin-bottom: 32px; }
+.landing-features { list-style: none; text-align: left; margin-bottom: 32px; display: flex; flex-direction: column; gap: 16px; }
+.landing-features li { display: flex; align-items: center; gap: 14px; font-size: 0.92rem; color: var(--text); }
+.landing-features svg { width: 24px; height: 24px; color: var(--primary); flex-shrink: 0; }
+.link-btn { background: none; border: none; color: var(--text-muted); font-family: var(--font-body); font-size: 0.88rem; cursor: pointer; text-decoration: underline; margin-top: 14px; }
+.link-btn:hover { color: var(--text); }
+.back-link { display: block; margin-bottom: 16px; text-decoration: none; }
+.danger-link { color: var(--danger); display: block; margin-top: 20px; text-align: center; }
+
+/* ============================================================ */
+/* HEADER ACTIONS                                               */
+/* ============================================================ */
+.app-header { justify-content: flex-start; }
+.app-title { flex: 1; }
+.header-action { background: none; border: none; color: var(--text); cursor: pointer; position: relative; padding: 6px; display: flex; align-items: center; justify-content: center; }
+.header-action svg { width: 24px; height: 24px; }
+.header-badge {
+  position: absolute; top: -2px; right: -2px; background: var(--primary); color: #fff;
+  font-size: 0.62rem; font-weight: 700; min-width: 16px; height: 16px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; padding: 0 4px;
+}
+.circle-btn.info { color: var(--accent); width: 52px; height: 52px; }
+.circle-btn.info svg { width: 22px; height: 22px; }
+.swipe-empty svg { width: 48px; height: 48px; color: var(--text-dim); margin-bottom: 16px; }
+.empty-state svg { width: 48px; height: 48px; color: var(--text-dim); margin-bottom: 16px; }
+
+/* ============================================================ */
+/* PROFIL : interets + preferences                             */
+/* ============================================================ */
+.profile-interests { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+.profile-interests .chip-static { padding: 7px 13px; border-radius: 18px; background: var(--glass-strong); border: 1px solid var(--border); font-size: 0.8rem; }
+.pref-row { margin-bottom: 18px; }
+.pref-row label { display: block; font-size: 0.88rem; margin-bottom: 8px; color: var(--text-muted); }
+.range { width: 100%; -webkit-appearance: none; appearance: none; height: 6px; border-radius: 6px; background: rgba(0,0,0,0.4); outline: none; }
+.range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--primary); cursor: pointer; box-shadow: 0 2px 8px rgba(255,61,119,0.5); }
+.range::-moz-range-thumb { width: 20px; height: 20px; border: none; border-radius: 50%; background: var(--primary); cursor: pointer; }
+
+/* ============================================================ */
+/* PROFIL DÉTAILLÉ                                              */
+/* ============================================================ */
+.detail-panel { position: fixed; inset: 0; max-width: 520px; margin: 0 auto; background: var(--bg-0); z-index: 30; overflow-y: auto; }
+.detail-close { position: fixed; top: 16px; right: 16px; z-index: 32; width: 40px; height: 40px; border-radius: 50%; border: none; background: rgba(0,0,0,0.6); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; max-width: inherit; }
+.detail-close svg { width: 22px; height: 22px; }
+.detail-gallery { display: flex; flex-direction: column; }
+.detail-gallery img { width: 100%; aspect-ratio: 3/4; object-fit: cover; }
+.detail-body { padding: 24px; padding-bottom: 60px; }
+.detail-head { display: flex; align-items: baseline; gap: 10px; }
+.detail-name { font-family: var(--font-display); font-size: 1.8rem; font-weight: 600; }
+.detail-age { font-size: 1.3rem; color: var(--text-muted); }
+.detail-distance { color: var(--accent); font-size: 0.9rem; margin-top: 4px; }
+.detail-bio { color: var(--text-muted); margin: 16px 0; line-height: 1.6; }
+.detail-interests { display: flex; flex-wrap: wrap; gap: 8px; }
+.detail-interests .chip-static { padding: 7px 13px; border-radius: 18px; background: var(--glass-strong); border: 1px solid var(--border); font-size: 0.8rem; }
+
+/* ============================================================ */
+/* QUI M'A LIKÉ                                                 */
+/* ============================================================ */
+.likes-panel { position: fixed; inset: 0; max-width: 520px; margin: 0 auto; background: var(--bg-0); z-index: 25; display: flex; flex-direction: column; }
+.likes-grid { flex: 1; overflow-y: auto; padding: 20px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; align-content: start; }
+.like-card { position: relative; aspect-ratio: 3/4; border-radius: var(--radius-m); overflow: hidden; cursor: pointer; background: var(--bg-2); }
+.like-card img { width: 100%; height: 100%; object-fit: cover; }
+.like-card .like-name { position: absolute; bottom: 0; left: 0; right: 0; padding: 16px 12px 10px; background: linear-gradient(to top, rgba(0,0,0,0.85), transparent); font-weight: 600; font-size: 0.95rem; }
+
+/* ============================================================ */
+/* MODALES                                                      */
+/* ============================================================ */
+.modal { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.8); backdrop-filter: blur(6px); padding: 20px; }
+.modal-card { width: 100%; max-width: 440px; max-height: 90vh; overflow-y: auto; background: var(--bg-1); border: 1px solid var(--border-strong); border-radius: var(--radius-l); padding: 28px 24px; animation: pop 0.4s cubic-bezier(0.2,0.8,0.2,1); }
+.modal-card h3 { font-family: var(--font-display); font-size: 1.4rem; margin-bottom: 8px; }
+.modal-card h4 { font-size: 0.95rem; margin-bottom: 8px; }
+.modal-card .btn { margin-top: 8px; }
+.report-reasons { display: flex; flex-direction: column; gap: 4px; margin: 16px 0; }
+.radio-row { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: var(--radius-s); cursor: pointer; font-size: 0.9rem; transition: background 0.2s; }
+.radio-row:hover { background: var(--glass); }
+.radio-row input { width: 18px; height: 18px; accent-color: var(--primary); }
+
+/* ============================================================ */
+/* CGU                                                          */
+/* ============================================================ */
+.cgu-panel { position: fixed; inset: 0; max-width: 520px; margin: 0 auto; background: var(--bg-0); z-index: 45; display: flex; flex-direction: column; }
+.cgu-content { flex: 1; overflow-y: auto; padding: 24px; padding-bottom: 60px; }
+.cgu-content h3 { font-family: var(--font-display); font-size: 1.3rem; margin: 24px 0 12px; color: var(--primary-soft); }
+.cgu-content h3:first-child { margin-top: 0; }
+.cgu-content h4 { font-size: 1rem; margin: 18px 0 6px; }
+.cgu-content p { color: var(--text-muted); font-size: 0.9rem; line-height: 1.6; margin-bottom: 10px; }
+.cgu-footer { font-size: 0.78rem; color: var(--text-dim); font-style: italic; margin-top: 24px; }
+
+/* ============================================================ */
+/* TOAST                                                        */
+/* ============================================================ */
+.toast {
+  position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+  background: var(--bg-2); border: 1px solid var(--border-strong); color: var(--text);
+  padding: 12px 22px; border-radius: 24px; font-size: 0.9rem; z-index: 60;
+  box-shadow: var(--shadow); animation: toastIn 0.3s ease; max-width: 90%;
+}
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
