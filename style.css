@@ -220,7 +220,12 @@ textarea { resize: vertical; font-family: var(--font-body); }
   box-shadow: var(--shadow); cursor: grab; user-select: none;
   display: flex; flex-direction: column; justify-content: flex-end;
   transition: transform 0.3s ease, opacity 0.3s ease;
+  transform-origin: center bottom;
 }
+/* Profondeur : les cartes du dessous sont legerement reduites et decalees */
+.swipe-card[data-depth="0"] { z-index: 3; }
+.swipe-card[data-depth="1"] { z-index: 2; transform: scale(0.95) translateY(12px); }
+.swipe-card[data-depth="2"] { z-index: 1; transform: scale(0.9) translateY(24px); }
 .swipe-card .card-photo { position: absolute; inset: 0; background-size: cover; background-position: center; }
 .swipe-card .card-grad { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 55%); }
 .swipe-card .card-info { position: relative; padding: 24px; z-index: 2; }
@@ -358,3 +363,27 @@ textarea { resize: vertical; font-family: var(--font-body); }
   .auth-card, .onboarding-card { padding: 26px 20px; }
   .photo-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ============================================================ */
+/* BARRE DE DEFILEMENT INVISIBLE (PC + mobile)                  */
+/* ============================================================ */
+/* Firefox */
+* { scrollbar-width: none; }
+/* IE / vieux Edge */
+* { -ms-overflow-style: none; }
+/* Chrome / Safari / Edge (webkit) */
+*::-webkit-scrollbar { width: 0; height: 0; display: none; }
+body::-webkit-scrollbar,
+.chat-messages::-webkit-scrollbar,
+.profile-photos::-webkit-scrollbar { display: none; }
+
+/* ============================================================ */
+/* ANTI-ZOOM AU FOCUS SUR MOBILE                                */
+/* Les navigateurs mobiles zooment si la police < 16px.        */
+/* On force 16px sur tous les champs de saisie.                */
+/* ============================================================ */
+input, select, textarea {
+  font-size: 16px !important;
+}
+/* On garde des champs visuellement coherents malgre le 16px */
+.chat-input-row input { font-size: 16px !important; }
