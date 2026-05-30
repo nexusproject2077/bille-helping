@@ -1,35 +1,26 @@
+// ============================================================
+// BILLE HELPING — Application
+// ============================================================
+
 // ===== Imports Firebase (SDK v12.14.0) =====
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
 import {
-  getAuth,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged
+  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  signOut, onAuthStateChanged, deleteUser
 } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
 import {
-  getFirestore,
-  doc,
-  setDoc,
-  updateDoc,
-  getDoc,
-  getDocs,
-  collection,
-  query,
-  where,
-  orderBy,
-  startAt,
-  endAt,
-  serverTimestamp
+  getFirestore, doc, setDoc, updateDoc, getDoc, getDocs, deleteDoc,
+  collection, query, where, orderBy, startAt, endAt, addDoc,
+  onSnapshot, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
-// Librairie geohash de Firebase pour les requetes de proximite
 import {
-  geohashForLocation,
-  geohashQueryBounds,
-  distanceBetween
+  getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject
+} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-storage.js";
+import {
+  geohashForLocation, geohashQueryBounds, distanceBetween
 } from "https://cdn.jsdelivr.net/npm/geofire-common@6.0.0/dist/geofire-common/index.esm.js";
 
-// ===== Configuration du projet Firebase =====
+// ===== Configuration =====
 const firebaseConfig = {
   apiKey: "AIzaSyA7ZBYnnB6vWTkDQBmjRQ0AyY4lG3PtiKg",
   authDomain: "bille-helping.firebaseapp.com",
@@ -39,334 +30,813 @@ const firebaseConfig = {
   appId: "1:1054050764975:web:a3cb255705a9d5d39f2c5a",
   measurementId: "G-6EVPS9S839"
 };
-
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
 // ===== Constantes =====
-const GRID_DEGREES = 0.01; // ~1.1 km : taille de la grille de floutage
-const SEARCH_RADIUS_M = 50000; // rayon de recherche : 50 km
+const GRID_DEGREES = 0.01;        // ~1.1 km de floutage
+const SEARCH_RADIUS_M = 50000;    // 50 km
+const INTERESTS = [
+  "Sport", "Musique", "Cinema", "Voyages", "Cuisine", "Jeux video",
+  "Lecture", "Sorties", "Nature", "Art", "Tech", "Fitness"
+];
 
-// ===== Elements du DOM =====
-const authZone = document.getElementById("auth-zone");
-const appZone = document.getElementById("app-zone");
-const tabLogin = document.getElementById("tab-login");
-const tabSignup = document.getElementById("tab-signup");
-const signupFields = document.getElementById("signup-fields");
-const emailInput = document.getElementById("email");
-const passwordInput = document.getElementById("password");
-const pseudoInput = document.getElementById("pseudo");
-const birthdateInput = document.getElementById("birthdate");
-const genderInput = document.getElementById("gender");
-const seekingInput = document.getElementById("seeking");
-const consentAge = document.getElementById("consent-age");
-const consentData = document.getElementById("consent-data");
-const btnSubmit = document.getElementById("btn-submit");
-const btnLogout = document.getElementById("btn-logout");
-const statusEl = document.getElementById("status");
-const welcomePseudo = document.getElementById("welcome-pseudo");
-const geoStatus = document.getElementById("geo-status");
-const btnGeo = document.getElementById("btn-geo");
-const nearby = document.getElementById("nearby");
-const nearbyList = document.getElementById("nearby-list");
-
+// ===== Etat global =====
 let mode = "login";
-let currentProfile = null;
+let currentUser = null;       // firebase auth user
+let currentProfile = null;    // doc Firestore
+let onbPhotos = [];           // {url, path}
+let onbInterests = [];
+let swipeQueue = [];          // profils a swiper
+let activeChat = null;        // {matchId, otherUid, otherName}
+let chatUnsub = null;         // unsubscribe du listener chat
+let matchesUnsub = null;
 
-// ===== Bascule connexion / inscription =====
-function setMode(newMode) {
-  mode = newMode;
-  if (mode === "signup") {
-    tabSignup.classList.add("active");
-    tabLogin.classList.remove("active");
-    signupFields.classList.remove("hidden");
-    btnSubmit.textContent = "Creer mon compte";
-  } else {
-    tabLogin.classList.add("active");
-    tabSignup.classList.remove("active");
-    signupFields.classList.add("hidden");
-    btnSubmit.textContent = "Se connecter";
-  }
-  showStatus("", "");
-}
-tabLogin.addEventListener("click", () => setMode("login"));
-tabSignup.addEventListener("click", () => setMode("signup"));
-
-function showStatus(message, type) {
-  statusEl.textContent = message;
-  statusEl.className = "status " + (type || "");
+// ===== Helpers DOM =====
+const $ = (id) => document.getElementById(id);
+const screens = {
+  auth: $("auth-screen"),
+  onboarding: $("onboarding-screen"),
+  app: $("app-screen")
+};
+function showScreen(name) {
+  Object.values(screens).forEach((s) => s.classList.add("hidden"));
+  screens[name].classList.remove("hidden");
 }
 
 function translateError(code) {
-  const messages = {
+  const m = {
     "auth/email-already-in-use": "Cette adresse e-mail est deja utilisee.",
     "auth/invalid-email": "Adresse e-mail invalide.",
-    "auth/weak-password": "Le mot de passe doit faire au moins 6 caracteres.",
-    "auth/user-not-found": "Aucun compte avec cette adresse.",
-    "auth/wrong-password": "Mot de passe incorrect.",
+    "auth/weak-password": "Mot de passe : 6 caracteres minimum.",
     "auth/invalid-credential": "E-mail ou mot de passe incorrect.",
-    "auth/missing-password": "Merci de saisir un mot de passe.",
     "auth/too-many-requests": "Trop de tentatives. Reessaie plus tard."
   };
-  return messages[code] || "Une erreur est survenue : " + code;
+  return m[code] || "Erreur : " + code;
 }
 
 function calculateAge(birthdate) {
-  const today = new Date();
-  const birth = new Date(birthdate);
-  let age = today.getFullYear() - birth.getFullYear();
-  const m = today.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-  return age;
+  const t = new Date(), b = new Date(birthdate);
+  let a = t.getFullYear() - b.getFullYear();
+  const md = t.getMonth() - b.getMonth();
+  if (md < 0 || (md === 0 && t.getDate() < b.getDate())) a--;
+  return a;
+}
+
+// ============================================================
+// AUTH : bascule connexion / inscription
+// ============================================================
+function setMode(newMode) {
+  mode = newMode;
+  if (mode === "signup") {
+    $("tab-signup").classList.add("active");
+    $("tab-login").classList.remove("active");
+    $("signup-fields").classList.remove("hidden");
+    $("btn-submit").textContent = "Creer mon compte";
+  } else {
+    $("tab-login").classList.add("active");
+    $("tab-signup").classList.remove("active");
+    $("signup-fields").classList.add("hidden");
+    $("btn-submit").textContent = "Se connecter";
+  }
+  $("auth-status").textContent = "";
+}
+$("tab-login").addEventListener("click", () => setMode("login"));
+$("tab-signup").addEventListener("click", () => setMode("signup"));
+
+function authStatus(msg, type) {
+  const el = $("auth-status");
+  el.textContent = msg;
+  el.className = "status " + (type || "");
 }
 
 function validateSignup() {
-  if (!pseudoInput.value.trim()) return "Choisis un pseudo.";
-  if (!birthdateInput.value) return "Indique ta date de naissance.";
-  const age = calculateAge(birthdateInput.value);
-  if (age < 18) return "Tu dois avoir 18 ans ou plus pour t'inscrire.";
+  if (!$("pseudo").value.trim()) return "Choisis un pseudo.";
+  if (!$("birthdate").value) return "Indique ta date de naissance.";
+  const age = calculateAge($("birthdate").value);
+  if (age < 18) return "Tu dois avoir 18 ans ou plus.";
   if (age > 120) return "Date de naissance invalide.";
-  if (!genderInput.value) return "Indique ton genre.";
-  if (!seekingInput.value) return "Indique ce que tu recherches.";
-  if (!consentAge.checked) return "Tu dois certifier avoir 18 ans ou plus.";
-  if (!consentData.checked) return "Tu dois accepter le traitement de tes donnees.";
+  if (!$("gender").value) return "Indique ton genre.";
+  if (!$("seeking").value) return "Indique ce que tu recherches.";
+  if (!$("consent-age").checked) return "Tu dois certifier avoir 18 ans ou plus.";
+  if (!$("consent-data").checked) return "Tu dois accepter le traitement des donnees.";
   return null;
 }
 
-// ===== Soumission auth =====
-btnSubmit.addEventListener("click", async () => {
-  const email = emailInput.value.trim();
-  const password = passwordInput.value;
-  if (!email || !password) {
-    showStatus("Remplis l'e-mail et le mot de passe.", "error");
-    return;
-  }
+$("btn-submit").addEventListener("click", async () => {
+  const email = $("email").value.trim();
+  const password = $("password").value;
+  if (!email || !password) { authStatus("Remplis l'e-mail et le mot de passe.", "error"); return; }
 
   if (mode === "login") {
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (error) {
-      showStatus(translateError(error.code), "error");
-    }
+    try { await signInWithEmailAndPassword(auth, email, password); }
+    catch (e) { authStatus(translateError(e.code), "error"); }
     return;
   }
 
-  const validationError = validateSignup();
-  if (validationError) {
-    showStatus(validationError, "error");
-    return;
-  }
+  const err = validateSignup();
+  if (err) { authStatus(err, "error"); return; }
 
   try {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     await setDoc(doc(db, "users", cred.user.uid), {
-      pseudo: pseudoInput.value.trim(),
-      birthdate: birthdateInput.value,
-      gender: genderInput.value,
-      seeking: seekingInput.value,
+      pseudo: $("pseudo").value.trim(),
+      birthdate: $("birthdate").value,
+      gender: $("gender").value,
+      seeking: $("seeking").value,
+      bio: "",
+      interests: [],
+      photos: [],
       identityVerified: false,
       location: null,
       geohash: null,
-      consent: {
-        age18: true,
-        dataProcessing: true,
-        consentedAt: serverTimestamp()
-      },
+      profileComplete: false,
+      visibility: { age: true, distance: true, bio: true, interests: true, discoverable: true },
+      consent: { age18: true, dataProcessing: true, consentedAt: serverTimestamp() },
       createdAt: serverTimestamp()
     });
-    showStatus("Compte cree avec succes !", "success");
-  } catch (error) {
-    showStatus(translateError(error.code), "error");
-  }
+    authStatus("Compte cree !", "success");
+  } catch (e) { authStatus(translateError(e.code), "error"); }
 });
 
-btnLogout.addEventListener("click", async () => {
-  await signOut(auth);
-});
+// ============================================================
+// ONBOARDING : completion de profil obligatoire
+// ============================================================
 
-// ===== Floutage de la position =====
-// Arrondit les coordonnees a la grille pour ne jamais stocker la position exacte.
-function blurCoordinate(value) {
-  return Math.round(value / GRID_DEGREES) * GRID_DEGREES;
+// Calcule le pourcentage de completion
+function computeCompletion() {
+  let score = 0;
+  if (onbPhotos.length >= 1) score += 50;          // photo obligatoire = gros poids
+  if ($("bio-input").value.trim().length >= 10) score += 25;
+  if (onbInterests.length >= 1) score += 25;
+  return score;
 }
 
-// ===== Activation de la localisation =====
-btnGeo.addEventListener("click", () => {
-  if (!navigator.geolocation) {
-    geoStatus.textContent = "Ton navigateur ne supporte pas la geolocalisation.";
-    geoStatus.className = "geo-status error";
-    return;
+function updateProgress() {
+  const pct = computeCompletion();
+  $("onb-progress-fill").style.width = pct + "%";
+  $("onb-progress-label").textContent = pct + "%";
+  // Le bouton n'est actif qu'a 100%
+  const btn = $("btn-finish-onboarding");
+  if (pct >= 100) {
+    btn.disabled = false;
+    btn.style.opacity = "1";
+    btn.style.cursor = "pointer";
+  } else {
+    btn.disabled = true;
+    btn.style.opacity = "0.5";
+    btn.style.cursor = "not-allowed";
   }
-  geoStatus.textContent = "Recuperation de ta position...";
-  geoStatus.className = "geo-status";
+}
 
-  navigator.geolocation.getCurrentPosition(
-    async (pos) => {
-      // Position exacte recue du navigateur
-      const exactLat = pos.coords.latitude;
-      const exactLng = pos.coords.longitude;
+// ----- Photos -----
+function renderOnbPhotos() {
+  const grid = $("photo-grid");
+  grid.innerHTML = "";
+  onbPhotos.forEach((p, i) => {
+    const thumb = document.createElement("div");
+    thumb.className = "photo-thumb";
+    const img = document.createElement("img");
+    img.src = p.url;
+    const rm = document.createElement("button");
+    rm.className = "remove";
+    rm.textContent = "\u00d7";
+    rm.addEventListener("click", () => removeOnbPhoto(i));
+    thumb.appendChild(img);
+    thumb.appendChild(rm);
+    grid.appendChild(thumb);
+  });
+  updateProgress();
+}
 
-      // On la floute IMMEDIATEMENT, avant tout stockage
-      const lat = blurCoordinate(exactLat);
-      const lng = blurCoordinate(exactLng);
-      const hash = geohashForLocation([lat, lng]);
+async function removeOnbPhoto(i) {
+  const p = onbPhotos[i];
+  try { if (p.path) await deleteObject(storageRef(storage, p.path)); } catch (e) {}
+  onbPhotos.splice(i, 1);
+  renderOnbPhotos();
+}
 
-      try {
-        const user = auth.currentUser;
-        await updateDoc(doc(db, "users", user.uid), {
-          location: { lat: lat, lng: lng },
-          geohash: hash,
-          locationUpdatedAt: serverTimestamp()
-        });
-        currentProfile.location = { lat, lng };
-        currentProfile.geohash = hash;
+$("btn-add-photo").addEventListener("click", () => $("photo-input").click());
 
-        geoStatus.textContent = "Localisation activee (position arrondie a ~1 km).";
-        geoStatus.className = "geo-status success";
-        btnGeo.textContent = "Mettre a jour ma localisation";
+$("photo-input").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (onbPhotos.length >= 6) { photoStatus("Maximum 6 photos.", "error"); return; }
+  if (file.size > 5 * 1024 * 1024) { photoStatus("Photo trop lourde (max 5 Mo).", "error"); return; }
 
-        await loadNearby();
-      } catch (e) {
-        geoStatus.textContent = "Erreur lors de l'enregistrement : " + e.message;
-        geoStatus.className = "geo-status error";
-      }
-    },
-    (err) => {
-      if (err.code === 1) {
-        geoStatus.textContent = "Tu as refuse la localisation. Active-la pour voir les profils proches.";
-      } else {
-        geoStatus.textContent = "Impossible d'obtenir ta position.";
-      }
-      geoStatus.className = "geo-status error";
-    },
-    { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
-  );
+  photoStatus("Envoi en cours...", "");
+  try {
+    const path = "users/" + currentUser.uid + "/" + Date.now() + "_" + file.name;
+    const sRef = storageRef(storage, path);
+    await uploadBytes(sRef, file);
+    const url = await getDownloadURL(sRef);
+    onbPhotos.push({ url, path });
+    renderOnbPhotos();
+    photoStatus("", "");
+  } catch (err) {
+    // Storage probablement pas active : message clair
+    photoStatus("Upload impossible. Firebase Storage n'est peut-etre pas active.", "error");
+    console.error("Erreur upload photo :", err);
+  }
+  $("photo-input").value = "";
 });
 
-// ===== Recherche des profils proches (via geohash) =====
-async function loadNearby() {
-  if (!currentProfile || !currentProfile.location) return;
+function photoStatus(msg, type) {
+  const el = $("photo-status");
+  el.textContent = msg;
+  el.className = "status " + (type || "");
+}
+
+// ----- Bio -----
+$("bio-input").addEventListener("input", () => {
+  $("bio-count").textContent = $("bio-input").value.length;
+  updateProgress();
+});
+
+// ----- Interets -----
+function renderInterests() {
+  const box = $("interests-chips");
+  box.innerHTML = "";
+  INTERESTS.forEach((label) => {
+    const chip = document.createElement("button");
+    chip.className = "chip" + (onbInterests.includes(label) ? " selected" : "");
+    chip.textContent = label;
+    chip.addEventListener("click", () => {
+      if (onbInterests.includes(label)) {
+        onbInterests = onbInterests.filter((x) => x !== label);
+      } else {
+        onbInterests.push(label);
+      }
+      renderInterests();
+      updateProgress();
+    });
+    box.appendChild(chip);
+  });
+}
+
+// ----- Validation finale -----
+$("btn-finish-onboarding").addEventListener("click", async () => {
+  if (computeCompletion() < 100) return;
+  try {
+    await updateDoc(doc(db, "users", currentUser.uid), {
+      photos: onbPhotos,
+      bio: $("bio-input").value.trim(),
+      interests: onbInterests,
+      profileComplete: true
+    });
+    currentProfile.photos = onbPhotos;
+    currentProfile.bio = $("bio-input").value.trim();
+    currentProfile.interests = onbInterests;
+    currentProfile.profileComplete = true;
+    enterApp();
+  } catch (e) {
+    photoStatus("Erreur : " + e.message, "error");
+  }
+});
+
+$("btn-logout-onb").addEventListener("click", () => signOut(auth));
+
+// Prepare l'ecran d'onboarding avec les donnees existantes
+function initOnboarding() {
+  onbPhotos = currentProfile.photos || [];
+  onbInterests = currentProfile.interests || [];
+  $("bio-input").value = currentProfile.bio || "";
+  $("bio-count").textContent = ($("bio-input").value || "").length;
+  renderOnbPhotos();
+  renderInterests();
+  updateProgress();
+  showScreen("onboarding");
+}
+
+// ============================================================
+// APP : navigation entre onglets
+// ============================================================
+function switchView(name) {
+  document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
+  document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
+  $("view-" + name).classList.add("active");
+  document.querySelector('.nav-btn[data-view="' + name + '"]').classList.add("active");
+  if (name === "discover") loadSwipeQueue();
+  if (name === "messages") loadMatches();
+  if (name === "profile") renderProfile();
+}
+document.querySelectorAll(".nav-btn").forEach((btn) => {
+  btn.addEventListener("click", () => switchView(btn.dataset.view));
+});
+
+function enterApp() {
+  showScreen("app");
+  switchView("discover");
+}
+
+// ============================================================
+// PROFIL : affichage + visibilite + RGPD
+// ============================================================
+function renderProfile() {
+  const p = currentProfile;
+  // Photos
+  const pc = $("profile-photos");
+  pc.innerHTML = "";
+  (p.photos || []).forEach((ph) => {
+    const img = document.createElement("img");
+    img.src = ph.url;
+    pc.appendChild(img);
+  });
+  $("profile-name").textContent = p.pseudo;
+  $("profile-age").textContent = calculateAge(p.birthdate) + " ans";
+  $("profile-bio").textContent = p.bio || "";
+
+  // Etat des toggles de visibilite
+  const v = p.visibility || {};
+  $("vis-age").checked = v.age !== false;
+  $("vis-distance").checked = v.distance !== false;
+  $("vis-bio").checked = v.bio !== false;
+  $("vis-interests").checked = v.interests !== false;
+  $("vis-discoverable").checked = v.discoverable !== false;
+
+  // Etat geoloc
+  if (p.location) {
+    $("geo-status").textContent = "Localisation activee (arrondie a ~1 km).";
+    $("btn-geo").textContent = "Mettre a jour ma localisation";
+  } else {
+    $("geo-status").textContent = "Localisation non activee.";
+    $("btn-geo").textContent = "Activer ma localisation";
+  }
+}
+
+// ----- Visibilite : sauvegarde a chaque changement -----
+async function saveVisibility() {
+  const visibility = {
+    age: $("vis-age").checked,
+    distance: $("vis-distance").checked,
+    bio: $("vis-bio").checked,
+    interests: $("vis-interests").checked,
+    discoverable: $("vis-discoverable").checked
+  };
+  try {
+    await updateDoc(doc(db, "users", currentUser.uid), { visibility });
+    currentProfile.visibility = visibility;
+    visStatus("Preferences enregistrees.", "success");
+    setTimeout(() => visStatus("", ""), 1500);
+  } catch (e) { visStatus("Erreur d'enregistrement.", "error"); }
+}
+function visStatus(msg, type) {
+  const el = $("vis-status");
+  el.textContent = msg;
+  el.className = "status " + (type || "");
+}
+["vis-age", "vis-distance", "vis-bio", "vis-interests", "vis-discoverable"]
+  .forEach((id) => $(id).addEventListener("change", saveVisibility));
+
+// ----- Geolocalisation (floutee) -----
+function blurCoordinate(v) { return Math.round(v / GRID_DEGREES) * GRID_DEGREES; }
+
+$("btn-geo").addEventListener("click", () => {
+  if (!navigator.geolocation) { $("geo-status").textContent = "Geolocalisation non supportee."; return; }
+  $("geo-status").textContent = "Recuperation de ta position...";
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const lat = blurCoordinate(pos.coords.latitude);
+    const lng = blurCoordinate(pos.coords.longitude);
+    const hash = geohashForLocation([lat, lng]);
+    try {
+      await updateDoc(doc(db, "users", currentUser.uid), {
+        location: { lat, lng }, geohash: hash, locationUpdatedAt: serverTimestamp()
+      });
+      currentProfile.location = { lat, lng };
+      currentProfile.geohash = hash;
+      $("geo-status").textContent = "Localisation activee (arrondie a ~1 km).";
+      $("btn-geo").textContent = "Mettre a jour ma localisation";
+    } catch (e) { $("geo-status").textContent = "Erreur : " + e.message; }
+  }, (err) => {
+    $("geo-status").textContent = err.code === 1
+      ? "Tu as refuse la localisation."
+      : "Position indisponible.";
+  }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 });
+});
+
+// ----- RGPD : export -----
+$("btn-export").addEventListener("click", () => {
+  const data = JSON.stringify(currentProfile, null, 2);
+  const blob = new Blob([data], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "mes-donnees-bille-helping.json";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// ----- RGPD : suppression complete du compte -----
+$("btn-delete").addEventListener("click", async () => {
+  if (!confirm("Supprimer definitivement ton compte et toutes tes donnees ? Cette action est irreversible.")) return;
+  try {
+    // Supprime les photos du Storage
+    for (const ph of (currentProfile.photos || [])) {
+      try { if (ph.path) await deleteObject(storageRef(storage, ph.path)); } catch (e) {}
+    }
+    // Supprime le document Firestore
+    await deleteDoc(doc(db, "users", currentUser.uid));
+    // Supprime le compte Auth
+    await deleteUser(currentUser);
+    alert("Compte supprime. A bientot !");
+  } catch (e) {
+    if (e.code === "auth/requires-recent-login") {
+      alert("Pour des raisons de securite, reconnecte-toi puis reessaie la suppression.");
+      signOut(auth);
+    } else {
+      alert("Erreur : " + e.message);
+    }
+  }
+});
+
+$("btn-logout").addEventListener("click", () => signOut(auth));
+
+// ============================================================
+// DECOUVRIR : swipe / like / match
+// ============================================================
+
+// Filtre selon l'orientation recherchee
+function matchesSeeking(me, other) {
+  if (me.seeking === "tous") return true;
+  if (me.seeking === "hommes") return other.gender === "homme";
+  if (me.seeking === "femmes") return other.gender === "femme";
+  return true;
+}
+
+// Charge les profils proches a swiper
+async function loadSwipeQueue() {
+  $("swipe-empty").classList.add("hidden");
+  if (!currentProfile.location) {
+    $("card-stack").innerHTML = "";
+    $("swipe-empty").classList.remove("hidden");
+    $("swipe-empty").querySelector("p").textContent = "Active ta localisation dans ton profil.";
+    return;
+  }
 
   const center = [currentProfile.location.lat, currentProfile.location.lng];
   const bounds = geohashQueryBounds(center, SEARCH_RADIUS_M);
-  const promises = [];
+  const promises = bounds.map((b) =>
+    getDocs(query(collection(db, "users"), orderBy("geohash"), startAt(b[0]), endAt(b[1])))
+  );
+  const snaps = await Promise.all(promises);
 
-  // On lance une requete par "tranche" de geohash couvrant la zone
-  for (const b of bounds) {
-    const q = query(
-      collection(db, "users"),
-      orderBy("geohash"),
-      startAt(b[0]),
-      endAt(b[1])
-    );
-    promises.push(getDocs(q));
-  }
+  // Recupere mes likes/pass deja faits
+  const seenSnap = await getDocs(collection(db, "users", currentUser.uid, "swipes"));
+  const seen = new Set();
+  seenSnap.forEach((d) => seen.add(d.id));
 
-  const snapshots = await Promise.all(promises);
-  const results = [];
+  const queue = [];
+  for (const snap of snaps) {
+    for (const d of snap.docs) {
+      if (d.id === currentUser.uid) continue;       // pas moi
+      if (seen.has(d.id)) continue;                 // deja vu
+      const data = d.data();
+      if (!data.location || !data.profileComplete) continue;
+      if (data.visibility && data.visibility.discoverable === false) continue;
+      if (!matchesSeeking(currentProfile, data)) continue;
 
-  for (const snap of snapshots) {
-    for (const docSnap of snap.docs) {
-      // On ignore son propre profil
-      if (docSnap.id === auth.currentUser.uid) continue;
-      const data = docSnap.data();
-      if (!data.location) continue;
-
-      // Distance reelle entre positions floutees (en km)
-      const distKm = distanceBetween(
-        [data.location.lat, data.location.lng],
-        center
-      );
-      // On filtre les faux positifs du geohash (au-dela du rayon)
+      const distKm = distanceBetween([data.location.lat, data.location.lng], center);
       if (distKm * 1000 > SEARCH_RADIUS_M) continue;
 
-      results.push({
-        pseudo: data.pseudo,
-        gender: data.gender,
-        distanceKm: distKm
-      });
+      queue.push({ uid: d.id, data, distanceKm: distKm });
     }
   }
-
-  results.sort((a, b) => a.distanceKm - b.distanceKm);
-  renderNearby(results);
+  queue.sort((a, b) => a.distanceKm - b.distanceKm);
+  swipeQueue = queue;
+  renderSwipeCards();
 }
 
-// ===== Affichage des profils proches =====
-function renderNearby(profiles) {
-  nearby.classList.remove("hidden");
-  nearbyList.innerHTML = "";
-
-  if (profiles.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "empty-nearby";
-    empty.textContent = "Personne dans ton secteur pour l'instant. Reviens plus tard !";
-    nearbyList.appendChild(empty);
+function renderSwipeCards() {
+  const stack = $("card-stack");
+  stack.innerHTML = "";
+  if (swipeQueue.length === 0) {
+    $("swipe-empty").classList.remove("hidden");
+    $("swipe-empty").querySelector("p").textContent = "Plus personne dans ton secteur pour l'instant.";
     return;
   }
+  $("swipe-empty").classList.add("hidden");
 
-  for (const p of profiles) {
-    const card = document.createElement("div");
-    card.className = "profile-card";
-
-    const info = document.createElement("div");
-    info.className = "info";
-    const name = document.createElement("span");
-    name.className = "name";
-    name.textContent = p.pseudo;
-    const meta = document.createElement("span");
-    meta.className = "meta";
-    meta.textContent = p.gender;
-    info.appendChild(name);
-    info.appendChild(meta);
-
-    const dist = document.createElement("span");
-    dist.className = "distance";
-    dist.textContent = formatDistance(p.distanceKm);
-
-    card.appendChild(info);
-    card.appendChild(dist);
-    nearbyList.appendChild(card);
-  }
+  // On affiche les 3 prochaines cartes (la premiere au-dessus)
+  const slice = swipeQueue.slice(0, 3).reverse();
+  slice.forEach((item) => {
+    const card = buildCard(item);
+    stack.appendChild(card);
+  });
 }
 
-// ===== Formatage de la distance (approximatif) =====
+function buildCard(item) {
+  const d = item.data;
+  const v = d.visibility || {};
+  const card = document.createElement("div");
+  card.className = "swipe-card";
+  card.dataset.uid = item.uid;
+
+  const photo = document.createElement("div");
+  photo.className = "card-photo";
+  if (d.photos && d.photos[0]) photo.style.backgroundImage = "url('" + d.photos[0].url + "')";
+  const grad = document.createElement("div");
+  grad.className = "card-grad";
+
+  const info = document.createElement("div");
+  info.className = "card-info";
+  const name = document.createElement("div");
+  name.className = "card-name";
+  name.textContent = d.pseudo + (v.age !== false ? ", " + calculateAge(d.birthdate) : "");
+  info.appendChild(name);
+
+  const meta = document.createElement("div");
+  meta.className = "card-meta";
+  const bits = [];
+  if (v.distance !== false) bits.push(formatDistance(item.distanceKm));
+  meta.textContent = bits.join(" \u00b7 ");
+  info.appendChild(meta);
+
+  if (v.bio !== false && d.bio) {
+    const bio = document.createElement("div");
+    bio.className = "card-bio";
+    bio.textContent = d.bio;
+    info.appendChild(bio);
+  }
+
+  if (v.interests !== false && d.interests && d.interests.length) {
+    const chips = document.createElement("div");
+    chips.className = "card-chips";
+    d.interests.forEach((it) => {
+      const c = document.createElement("span");
+      c.className = "card-chip";
+      c.textContent = it;
+      chips.appendChild(c);
+    });
+    info.appendChild(chips);
+  }
+
+  // Stamps LIKE / NOPE
+  const likeStamp = document.createElement("div");
+  likeStamp.className = "swipe-stamp like"; likeStamp.textContent = "LIKE";
+  const nopeStamp = document.createElement("div");
+  nopeStamp.className = "swipe-stamp nope"; nopeStamp.textContent = "NOPE";
+
+  card.appendChild(photo);
+  card.appendChild(grad);
+  card.appendChild(likeStamp);
+  card.appendChild(nopeStamp);
+  card.appendChild(info);
+
+  enableDrag(card, likeStamp, nopeStamp);
+  return card;
+}
+
 function formatDistance(km) {
   if (km < 1) return "a moins d'1 km";
   return "a ~" + Math.round(km) + " km";
 }
 
-// ===== Surveillance de l'etat de connexion =====
-onAuthStateChanged(auth, async (user) => {
-  if (user) {
-    authZone.classList.add("hidden");
-    appZone.classList.remove("hidden");
+// ----- Drag tactile / souris -----
+function enableDrag(card, likeStamp, nopeStamp) {
+  let startX = 0, currentX = 0, dragging = false;
 
-    try {
-      const snap = await getDoc(doc(db, "users", user.uid));
-      if (snap.exists()) {
-        currentProfile = snap.data();
-        welcomePseudo.textContent = currentProfile.pseudo || user.email;
-
-        // Si une localisation existe deja, on charge directement les profils
-        if (currentProfile.location) {
-          geoStatus.textContent = "Localisation deja activee.";
-          geoStatus.className = "geo-status success";
-          btnGeo.textContent = "Mettre a jour ma localisation";
-          await loadNearby();
-        }
-      } else {
-        welcomePseudo.textContent = user.email;
-      }
-    } catch (e) {
-      welcomePseudo.textContent = user.email;
+  const onStart = (x) => { dragging = true; startX = x; card.style.transition = "none"; };
+  const onMove = (x) => {
+    if (!dragging) return;
+    currentX = x - startX;
+    const rot = currentX / 18;
+    card.style.transform = "translateX(" + currentX + "px) rotate(" + rot + "deg)";
+    likeStamp.style.opacity = currentX > 0 ? Math.min(currentX / 100, 1) : 0;
+    nopeStamp.style.opacity = currentX < 0 ? Math.min(-currentX / 100, 1) : 0;
+  };
+  const onEnd = () => {
+    if (!dragging) return;
+    dragging = false;
+    card.style.transition = "transform 0.3s ease, opacity 0.3s ease";
+    if (currentX > 110) doSwipe("like");
+    else if (currentX < -110) doSwipe("pass");
+    else {
+      card.style.transform = "";
+      likeStamp.style.opacity = 0; nopeStamp.style.opacity = 0;
     }
-  } else {
-    authZone.classList.remove("hidden");
-    appZone.classList.add("hidden");
-    nearby.classList.add("hidden");
+    currentX = 0;
+  };
+
+  card.addEventListener("mousedown", (e) => onStart(e.clientX));
+  window.addEventListener("mousemove", (e) => onMove(e.clientX));
+  window.addEventListener("mouseup", onEnd);
+  card.addEventListener("touchstart", (e) => onStart(e.touches[0].clientX), { passive: true });
+  card.addEventListener("touchmove", (e) => onMove(e.touches[0].clientX), { passive: true });
+  card.addEventListener("touchend", onEnd);
+}
+
+// Boutons like/pass
+$("btn-like").addEventListener("click", () => doSwipe("like"));
+$("btn-pass").addEventListener("click", () => doSwipe("pass"));
+
+// ----- Action de swipe -----
+async function doSwipe(action) {
+  if (swipeQueue.length === 0) return;
+  const item = swipeQueue[0];
+  const topCard = $("card-stack").querySelector('.swipe-card[data-uid="' + item.uid + '"]');
+  if (topCard) topCard.classList.add(action === "like" ? "gone-right" : "gone-left");
+
+  // Enregistre le swipe
+  try {
+    await setDoc(doc(db, "users", currentUser.uid, "swipes", item.uid), {
+      action, at: serverTimestamp()
+    });
+  } catch (e) { console.error(e); }
+
+  // Si like, verifie le match mutuel
+  if (action === "like") {
+    try {
+      const otherSwipe = await getDoc(doc(db, "users", item.uid, "swipes", currentUser.uid));
+      if (otherSwipe.exists() && otherSwipe.data().action === "like") {
+        await createMatch(item);
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  swipeQueue.shift();
+  setTimeout(() => renderSwipeCards(), 300);
+}
+
+// ----- Creation d'un match -----
+async function createMatch(item) {
+  const matchId = [currentUser.uid, item.uid].sort().join("_");
+  try {
+    await setDoc(doc(db, "matches", matchId), {
+      users: [currentUser.uid, item.uid],
+      names: {
+        [currentUser.uid]: currentProfile.pseudo,
+        [item.uid]: item.data.pseudo
+      },
+      photos: {
+        [currentUser.uid]: (currentProfile.photos[0] || {}).url || "",
+        [item.uid]: (item.data.photos[0] || {}).url || ""
+      },
+      createdAt: serverTimestamp(),
+      lastMessage: ""
+    });
+    showMatchOverlay(item, matchId);
+  } catch (e) { console.error("Erreur match :", e); }
+}
+
+function showMatchOverlay(item, matchId) {
+  $("match-text").textContent = "Toi et " + item.data.pseudo + " vous etes likes !";
+  $("match-overlay").classList.remove("hidden");
+  $("btn-match-continue").onclick = () => $("match-overlay").classList.add("hidden");
+  $("btn-match-message").onclick = () => {
+    $("match-overlay").classList.add("hidden");
+    switchView("messages");
+    openChat(matchId, item.uid, item.data.pseudo);
+  };
+}
+
+// ============================================================
+// MESSAGES : liste des matchs + chat temps reel
+// ============================================================
+
+// Charge la liste des matchs (temps reel)
+function loadMatches() {
+  $("chat-panel").classList.add("hidden");
+  if (matchesUnsub) matchesUnsub();
+
+  const q = query(
+    collection(db, "matches"),
+    where("users", "array-contains", currentUser.uid)
+  );
+  matchesUnsub = onSnapshot(q, (snap) => {
+    const list = $("match-list");
+    list.innerHTML = "";
+    if (snap.empty) {
+      $("no-matches").classList.remove("hidden");
+      return;
+    }
+    $("no-matches").classList.add("hidden");
+
+    const matches = [];
+    snap.forEach((d) => matches.push({ id: d.id, ...d.data() }));
+    // Tri par date de dernier message (recent en premier)
+    matches.sort((a, b) => {
+      const ta = a.lastMessageAt ? a.lastMessageAt.seconds : (a.createdAt ? a.createdAt.seconds : 0);
+      const tb = b.lastMessageAt ? b.lastMessageAt.seconds : (b.createdAt ? b.createdAt.seconds : 0);
+      return tb - ta;
+    });
+
+    matches.forEach((m) => {
+      const otherUid = m.users.find((u) => u !== currentUser.uid);
+      const otherName = m.names ? m.names[otherUid] : "Inconnu";
+      const otherPhoto = m.photos ? m.photos[otherUid] : "";
+
+      const row = document.createElement("div");
+      row.className = "match-row";
+
+      const avatar = document.createElement("img");
+      avatar.className = "match-avatar";
+      if (otherPhoto) avatar.src = otherPhoto;
+      const info = document.createElement("div");
+      info.className = "match-info";
+      const name = document.createElement("div");
+      name.className = "match-name";
+      name.textContent = otherName;
+      const preview = document.createElement("div");
+      preview.className = "match-preview";
+      preview.textContent = m.lastMessage || "Dites-vous bonjour !";
+      info.appendChild(name);
+      info.appendChild(preview);
+
+      row.appendChild(avatar);
+      row.appendChild(info);
+      row.addEventListener("click", () => openChat(m.id, otherUid, otherName));
+      list.appendChild(row);
+    });
+  });
+}
+
+// Ouvre une conversation
+function openChat(matchId, otherUid, otherName) {
+  activeChat = { matchId, otherUid, otherName };
+  $("chat-with").textContent = otherName;
+  $("chat-messages").innerHTML = "";
+  $("chat-panel").classList.remove("hidden");
+
+  if (chatUnsub) chatUnsub();
+  const q = query(
+    collection(db, "matches", matchId, "messages"),
+    orderBy("at", "asc")
+  );
+  chatUnsub = onSnapshot(q, (snap) => {
+    const box = $("chat-messages");
+    box.innerHTML = "";
+    snap.forEach((d) => {
+      const msg = d.data();
+      const el = document.createElement("div");
+      el.className = "msg " + (msg.from === currentUser.uid ? "sent" : "received");
+      el.textContent = msg.text;
+      box.appendChild(el);
+    });
+    box.scrollTop = box.scrollHeight;
+  });
+}
+
+$("btn-back-messages").addEventListener("click", () => {
+  $("chat-panel").classList.add("hidden");
+  if (chatUnsub) { chatUnsub(); chatUnsub = null; }
+  activeChat = null;
+});
+
+// Envoi d'un message
+async function sendMessage() {
+  const text = $("chat-input").value.trim();
+  if (!text || !activeChat) return;
+  $("chat-input").value = "";
+  try {
+    await addDoc(collection(db, "matches", activeChat.matchId, "messages"), {
+      from: currentUser.uid,
+      text,
+      at: serverTimestamp()
+    });
+    await updateDoc(doc(db, "matches", activeChat.matchId), {
+      lastMessage: text,
+      lastMessageAt: serverTimestamp()
+    });
+  } catch (e) { console.error("Erreur envoi :", e); }
+}
+$("btn-send").addEventListener("click", sendMessage);
+$("chat-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
+
+// ============================================================
+// ORCHESTRATION : etat de connexion
+// ============================================================
+onAuthStateChanged(auth, async (user) => {
+  // Nettoyage des listeners
+  if (matchesUnsub) { matchesUnsub(); matchesUnsub = null; }
+  if (chatUnsub) { chatUnsub(); chatUnsub = null; }
+
+  if (!user) {
+    currentUser = null;
     currentProfile = null;
-    showStatus("", "");
+    showScreen("auth");
+    return;
+  }
+
+  currentUser = user;
+  try {
+    const snap = await getDoc(doc(db, "users", user.uid));
+    if (!snap.exists()) {
+      // Profil pas encore cree (cas limite) : on deconnecte
+      showScreen("auth");
+      return;
+    }
+    currentProfile = snap.data();
+
+    // Si profil incomplet -> onboarding obligatoire
+    if (!currentProfile.profileComplete) {
+      initOnboarding();
+    } else {
+      enterApp();
+    }
+  } catch (e) {
+    console.error("Erreur chargement profil :", e);
+    showScreen("auth");
   }
 });
