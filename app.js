@@ -14,9 +14,6 @@ import {
   onSnapshot, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 import {
-  getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject
-} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-storage.js";
-import {
   geohashForLocation, geohashQueryBounds, distanceBetween
 } from "https://cdn.jsdelivr.net/npm/geofire-common@6.0.0/dist/geofire-common/index.esm.js";
 
@@ -33,7 +30,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const storage = getStorage(app);
 
 // ===== Constantes =====
 const GRID_DEGREES = 0.01;        // ~1.1 km de floutage
@@ -212,33 +208,64 @@ function renderOnbPhotos() {
 }
 
 async function removeOnbPhoto(i) {
-  const p = onbPhotos[i];
-  try { if (p.path) await deleteObject(storageRef(storage, p.path)); } catch (e) {}
   onbPhotos.splice(i, 1);
   renderOnbPhotos();
 }
 
 $("btn-add-photo").addEventListener("click", () => $("photo-input").click());
 
+// Compresse une image (canvas) et renvoie une dataURL base64 legere
+function compressImage(file, maxSize, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        // Redimensionne pour que le plus grand cote = maxSize
+        if (width > height) {
+          if (width > maxSize) { height = height * (maxSize / width); width = maxSize; }
+        } else {
+          if (height > maxSize) { width = width * (maxSize / height); height = maxSize; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        // JPEG compresse en base64
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 $("photo-input").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file) return;
   if (onbPhotos.length >= 6) { photoStatus("Maximum 6 photos.", "error"); return; }
-  if (file.size > 5 * 1024 * 1024) { photoStatus("Photo trop lourde (max 5 Mo).", "error"); return; }
+  if (!file.type.startsWith("image/")) { photoStatus("Choisis une image.", "error"); return; }
 
-  photoStatus("Envoi en cours...", "");
+  photoStatus("Traitement de la photo...", "");
   try {
-    const path = "users/" + currentUser.uid + "/" + Date.now() + "_" + file.name;
-    const sRef = storageRef(storage, path);
-    await uploadBytes(sRef, file);
-    const url = await getDownloadURL(sRef);
-    onbPhotos.push({ url, path });
+    // Compression : max 800px, qualite 0.7 -> reste leger pour Firestore
+    const dataUrl = await compressImage(file, 800, 0.7);
+    // Securite : Firestore limite un document a 1 Mo. On verifie la taille.
+    if (dataUrl.length > 900000) {
+      const smaller = await compressImage(file, 600, 0.6);
+      onbPhotos.push({ url: smaller });
+    } else {
+      onbPhotos.push({ url: dataUrl });
+    }
     renderOnbPhotos();
     photoStatus("", "");
   } catch (err) {
-    // Storage probablement pas active : message clair
-    photoStatus("Upload impossible. Firebase Storage n'est peut-etre pas active.", "error");
-    console.error("Erreur upload photo :", err);
+    photoStatus("Erreur lors du traitement de la photo.", "error");
+    console.error(err);
   }
   $("photo-input").value = "";
 });
@@ -432,11 +459,7 @@ $("btn-export").addEventListener("click", () => {
 $("btn-delete").addEventListener("click", async () => {
   if (!confirm("Supprimer definitivement ton compte et toutes tes donnees ? Cette action est irreversible.")) return;
   try {
-    // Supprime les photos du Storage
-    for (const ph of (currentProfile.photos || [])) {
-      try { if (ph.path) await deleteObject(storageRef(storage, ph.path)); } catch (e) {}
-    }
-    // Supprime le document Firestore
+    // Les photos sont en base64 dans le document : le supprimer suffit.
     await deleteDoc(doc(db, "users", currentUser.uid));
     // Supprime le compte Auth
     await deleteUser(currentUser);
