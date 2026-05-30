@@ -1,0 +1,34 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Collection des profils utilisateurs
+    match /users/{userId} {
+
+      // Lecture : uniquement si connecte.
+      allow read: if request.auth != null;
+
+      // Creation : uniquement par le proprietaire, avec consentement obligatoire.
+      allow create: if request.auth != null
+                    && request.auth.uid == userId
+                    && request.resource.data.consent.age18 == true
+                    && request.resource.data.consent.dataProcessing == true
+                    && request.resource.data.identityVerified == false;
+
+      // Mise a jour : uniquement par le proprietaire.
+      // (couvre la mise a jour de la position / geohash)
+      allow update: if request.auth != null
+                    && request.auth.uid == userId;
+
+      // Suppression : uniquement par le proprietaire (droit a l'effacement RGPD).
+      allow delete: if request.auth != null
+                    && request.auth.uid == userId;
+    }
+
+    // Tout le reste interdit par defaut.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
