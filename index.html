@@ -4,15 +4,24 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bille Helping</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <main class="card">
-    <h1>Bille Helping</h1>
-    <p class="subtitle">Rencontres entre adultes consentants</p>
 
-    <!-- ===== Zone non connecte (auth) ===== -->
-    <div id="auth-zone">
+  <!-- ============================================================ -->
+  <!-- ÉCRAN AUTH (non connecté)                                    -->
+  <!-- ============================================================ -->
+  <div id="auth-screen" class="screen auth-screen">
+    <div class="auth-card">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <h1>Bille Helping</h1>
+        <p class="subtitle">Rencontres entre adultes consentants</p>
+      </div>
+
       <div class="tabs">
         <button id="tab-login" class="tab active">Connexion</button>
         <button id="tab-signup" class="tab">Inscription</button>
@@ -37,23 +46,25 @@
           <label for="birthdate">Date de naissance</label>
           <input type="date" id="birthdate" />
         </div>
-        <div class="field">
-          <label for="gender">Je suis</label>
-          <select id="gender">
-            <option value="">-- Choisir --</option>
-            <option value="homme">Un homme</option>
-            <option value="femme">Une femme</option>
-            <option value="autre">Autre</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="seeking">Je recherche</label>
-          <select id="seeking">
-            <option value="">-- Choisir --</option>
-            <option value="hommes">Des hommes</option>
-            <option value="femmes">Des femmes</option>
-            <option value="tous">Tout le monde</option>
-          </select>
+        <div class="field-row">
+          <div class="field">
+            <label for="gender">Je suis</label>
+            <select id="gender">
+              <option value="">--</option>
+              <option value="homme">Un homme</option>
+              <option value="femme">Une femme</option>
+              <option value="autre">Autre</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="seeking">Je recherche</label>
+            <select id="seeking">
+              <option value="">--</option>
+              <option value="hommes">Des hommes</option>
+              <option value="femmes">Des femmes</option>
+              <option value="tous">Tout le monde</option>
+            </select>
+          </div>
         </div>
         <div class="consent">
           <label class="checkbox">
@@ -62,38 +73,187 @@
           </label>
           <label class="checkbox">
             <input type="checkbox" id="consent-data" />
-            <span>J'accepte que mes donnees (dont localisation approximative et orientation) soient traitees pour le service de mise en relation, conformement a la politique de confidentialite.</span>
+            <span>J'accepte que mes donnees (localisation approximative, orientation, photos) soient traitees pour le service de mise en relation, conformement a la politique de confidentialite.</span>
           </label>
         </div>
       </div>
 
-      <div class="actions">
-        <button id="btn-submit" class="btn btn-primary">Se connecter</button>
-      </div>
-
-      <div id="status" class="status"></div>
+      <button id="btn-submit" class="btn btn-primary btn-block">Se connecter</button>
+      <div id="auth-status" class="status"></div>
     </div>
+  </div>
 
-    <!-- ===== Zone connecte (app) ===== -->
-    <div id="app-zone" class="hidden">
-      <p class="welcome">Salut <strong id="welcome-pseudo"></strong> !</p>
+  <!-- ============================================================ -->
+  <!-- ÉCRAN COMPLÉTION DE PROFIL (obligatoire après inscription)   -->
+  <!-- ============================================================ -->
+  <div id="onboarding-screen" class="screen onboarding-screen hidden">
+    <div class="onboarding-card">
+      <h2>Complete ton profil</h2>
+      <p class="onboarding-sub">Un profil complet est obligatoire pour rencontrer du monde.</p>
 
-      <!-- Bloc localisation -->
-      <div class="geo-block">
-        <p id="geo-status" class="geo-status">Active ta localisation pour voir qui est pres de toi.</p>
-        <button id="btn-geo" class="btn btn-primary">Activer ma localisation</button>
-        <p class="geo-note">Ta position exacte n'est jamais enregistree : elle est arrondie a environ 1 km.</p>
+      <div class="progress-wrap">
+        <div class="progress-bar"><div id="onb-progress-fill" class="progress-fill"></div></div>
+        <span id="onb-progress-label" class="progress-label">0%</span>
       </div>
 
-      <!-- Liste des profils proches -->
-      <div id="nearby" class="nearby hidden">
-        <h2>Pres de toi</h2>
-        <div id="nearby-list" class="nearby-list"></div>
+      <!-- Photos (obligatoire) -->
+      <div class="onb-section">
+        <h3>Tes photos <span class="req">obligatoire</span></h3>
+        <p class="hint">Ajoute au moins une photo. Elles seront visibles par les autres membres.</p>
+        <div id="photo-grid" class="photo-grid"></div>
+        <input type="file" id="photo-input" accept="image/*" class="hidden" />
+        <button id="btn-add-photo" class="btn btn-ghost btn-small">+ Ajouter une photo</button>
+        <p id="photo-status" class="status"></p>
       </div>
 
-      <button id="btn-logout" class="btn btn-ghost">Se deconnecter</button>
+      <!-- Bio -->
+      <div class="onb-section">
+        <h3>Ta bio</h3>
+        <textarea id="bio-input" maxlength="300" rows="3" placeholder="Quelques mots sur toi..."></textarea>
+        <span class="char-count"><span id="bio-count">0</span>/300</span>
+      </div>
+
+      <!-- Centres d'intérêt -->
+      <div class="onb-section">
+        <h3>Centres d'interet</h3>
+        <div id="interests-chips" class="chips"></div>
+      </div>
+
+      <button id="btn-finish-onboarding" class="btn btn-primary btn-block">Acceder a l'application</button>
+      <button id="btn-logout-onb" class="btn btn-ghost btn-small btn-block">Se deconnecter</button>
     </div>
-  </main>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- APP PRINCIPALE (connecté + profil complet)                   -->
+  <!-- ============================================================ -->
+  <div id="app-screen" class="screen app-screen hidden">
+
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand-mark small"></div>
+      <span class="app-title">Bille Helping</span>
+    </header>
+
+    <!-- ===== Onglet DÉCOUVRIR (swipe) ===== -->
+    <section id="view-discover" class="view active">
+      <div id="swipe-area" class="swipe-area">
+        <div id="swipe-empty" class="swipe-empty hidden">
+          <p>Plus personne dans ton secteur pour l'instant.</p>
+          <p class="hint">Reviens plus tard ou elargis ta zone !</p>
+        </div>
+        <div id="card-stack" class="card-stack"></div>
+      </div>
+      <div id="swipe-actions" class="swipe-actions">
+        <button id="btn-pass" class="circle-btn pass" title="Passer">&times;</button>
+        <button id="btn-like" class="circle-btn like" title="J'aime">&#10084;</button>
+      </div>
+    </section>
+
+    <!-- ===== Onglet MESSAGES ===== -->
+    <section id="view-messages" class="view">
+      <h2 class="view-title">Messages</h2>
+      <div id="match-list" class="match-list"></div>
+      <div id="no-matches" class="empty-state hidden">
+        <p>Pas encore de match.</p>
+        <p class="hint">Like des profils pour commencer a discuter !</p>
+      </div>
+
+      <!-- Conversation ouverte -->
+      <div id="chat-panel" class="chat-panel hidden">
+        <div class="chat-header">
+          <button id="btn-back-messages" class="back-btn">&larr;</button>
+          <span id="chat-with" class="chat-with"></span>
+        </div>
+        <div id="chat-messages" class="chat-messages"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chat-input" placeholder="Ecris un message..." maxlength="500" />
+          <button id="btn-send" class="btn btn-primary btn-small">Envoyer</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Onglet PROFIL ===== -->
+    <section id="view-profile" class="view">
+      <h2 class="view-title">Mon profil</h2>
+
+      <div class="profile-photos" id="profile-photos"></div>
+
+      <div class="profile-head">
+        <span id="profile-name" class="profile-name"></span>
+        <span id="profile-age" class="profile-age"></span>
+      </div>
+      <p id="profile-bio" class="profile-bio"></p>
+
+      <!-- Contrôles de visibilité -->
+      <div class="visibility-section">
+        <h3>Confidentialite</h3>
+        <p class="hint">Choisis ce que les autres peuvent voir.</p>
+
+        <label class="toggle-row">
+          <span>Afficher mon age</span>
+          <input type="checkbox" id="vis-age" class="toggle" checked />
+        </label>
+        <label class="toggle-row">
+          <span>Afficher ma distance</span>
+          <input type="checkbox" id="vis-distance" class="toggle" checked />
+        </label>
+        <label class="toggle-row">
+          <span>Afficher ma bio</span>
+          <input type="checkbox" id="vis-bio" class="toggle" checked />
+        </label>
+        <label class="toggle-row">
+          <span>Afficher mes centres d'interet</span>
+          <input type="checkbox" id="vis-interests" class="toggle" checked />
+        </label>
+        <label class="toggle-row">
+          <span>Etre visible dans Decouvrir</span>
+          <input type="checkbox" id="vis-discoverable" class="toggle" checked />
+        </label>
+        <p id="vis-status" class="status"></p>
+      </div>
+
+      <!-- Localisation -->
+      <div class="profile-section">
+        <h3>Localisation</h3>
+        <p id="geo-status" class="hint">Localisation non activee.</p>
+        <button id="btn-geo" class="btn btn-ghost btn-small">Activer ma localisation</button>
+        <p class="micro-note">Ta position exacte n'est jamais stockee (arrondie a ~1 km).</p>
+      </div>
+
+      <!-- RGPD -->
+      <div class="profile-section danger-zone">
+        <h3>Mes donnees</h3>
+        <button id="btn-export" class="btn btn-ghost btn-small">Exporter mes donnees</button>
+        <button id="btn-delete" class="btn btn-danger btn-small">Supprimer mon compte</button>
+        <button id="btn-logout" class="btn btn-ghost btn-small">Se deconnecter</button>
+      </div>
+    </section>
+
+    <!-- Barre de navigation -->
+    <nav class="bottom-nav">
+      <button id="nav-discover" class="nav-btn active" data-view="discover">
+        <span class="nav-icon">&#9825;</span><span class="nav-label">Decouvrir</span>
+      </button>
+      <button id="nav-messages" class="nav-btn" data-view="messages">
+        <span class="nav-icon">&#9993;</span><span class="nav-label">Messages</span>
+        <span id="nav-msg-badge" class="nav-badge hidden">0</span>
+      </button>
+      <button id="nav-profile" class="nav-btn" data-view="profile">
+        <span class="nav-icon">&#9737;</span><span class="nav-label">Profil</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Overlay match -->
+  <div id="match-overlay" class="match-overlay hidden">
+    <div class="match-pop">
+      <h2>C'est un match !</h2>
+      <p id="match-text"></p>
+      <button id="btn-match-message" class="btn btn-primary">Envoyer un message</button>
+      <button id="btn-match-continue" class="btn btn-ghost">Continuer a swiper</button>
+    </div>
+  </div>
 
   <script type="module" src="app.js"></script>
 </body>
