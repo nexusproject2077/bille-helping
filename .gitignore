@@ -1,0 +1,30 @@
+# Dependances
+node_modules/
+package-lock.json
+
+# Variables d'environnement et secrets (NE JAMAIS COMMITER)
+.env
+.env.local
+.env.*.local
+*-service-account.json
+serviceAccountKey.json
+
+# Cles privees prestataires (KYC, Stripe, etc.) - a venir
+secrets/
+
+# Firebase
+.firebase/
+firebase-debug.log
+.firebaserc
+
+# Systeme
+.DS_Store
+Thumbs.db
+
+# Editeurs
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
