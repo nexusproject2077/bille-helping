@@ -214,3 +214,97 @@ h1 {
 .hidden {
   display: none;
 }
+
+/* ===== Zone app connecte ===== */
+.welcome {
+  text-align: center;
+  font-size: 1.1rem;
+  margin-bottom: 20px;
+}
+
+.geo-block {
+  text-align: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.geo-status {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 14px;
+  line-height: 1.4;
+}
+
+.geo-status.success {
+  color: var(--success);
+}
+
+.geo-status.error {
+  color: var(--error);
+}
+
+.geo-note {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 12px;
+  opacity: 0.8;
+}
+
+.nearby {
+  margin-bottom: 20px;
+}
+
+.nearby h2 {
+  font-size: 1.1rem;
+  margin-bottom: 14px;
+  text-align: center;
+}
+
+.nearby-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.profile-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+}
+
+.profile-card .info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-card .name {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.profile-card .meta {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.profile-card .distance {
+  font-size: 0.85rem;
+  color: var(--secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.empty-nearby {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  padding: 20px;
+}
