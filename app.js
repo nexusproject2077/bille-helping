@@ -891,7 +891,8 @@ function updateTotalBadge() {
   }
 }
 
-
+// Ouvre une conversation
+function openChat(matchId, otherUid, otherName) {
   activeChat = { matchId, otherUid, otherName };
   $("chat-with").textContent = otherName;
   $("chat-messages").innerHTML = "";
@@ -1290,7 +1291,10 @@ async function saveSearchPrefs() {
 $("btn-show-cgu").addEventListener("click", () => $("cgu-panel").classList.remove("hidden"));
 $("btn-cgu-close").addEventListener("click", () => $("cgu-panel").classList.add("hidden"));
 
-
+// ============================================================
+// ORCHESTRATION : etat de connexion
+// ============================================================
+onAuthStateChanged(auth, async (user) => {
   // Nettoyage des listeners
   if (matchesUnsub) { matchesUnsub(); matchesUnsub = null; }
   if (listDisplayUnsub) { listDisplayUnsub(); listDisplayUnsub = null; }
