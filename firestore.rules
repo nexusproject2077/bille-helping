@@ -35,6 +35,8 @@ service cloud.firestore {
                     && request.auth.uid in request.resource.data.users;
       allow update: if request.auth != null
                     && request.auth.uid in resource.data.users;
+      allow delete: if request.auth != null
+                    && request.auth.uid in resource.data.users;
 
       // ===== Messages du match =====
       match /messages/{messageId} {
@@ -48,6 +50,15 @@ service cloud.firestore {
                       && request.auth.uid in get(/databases/$(database)/documents/matches/$(matchId)).data.users
                       && request.auth.uid != resource.data.from;
       }
+    }
+
+    // ===== Signalements =====
+    match /reports/{reportId} {
+      // Un membre connecte peut creer un signalement (lui comme reporter)
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.reporter;
+      // Personne ne peut relire/modifier les signalements cote client (moderation back-office)
+      allow read, update, delete: if false;
     }
 
     // Tout le reste interdit par defaut
