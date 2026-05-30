@@ -542,11 +542,14 @@ function renderSwipeCards() {
   $("swipe-empty").classList.add("hidden");
 
   // On affiche les 3 prochaines cartes (la premiere au-dessus)
-  const slice = swipeQueue.slice(0, 3).reverse();
-  slice.forEach((item) => {
-    const card = buildCard(item);
+  const slice = swipeQueue.slice(0, 3);
+  // On les ajoute en ordre inverse pour que la premiere soit au-dessus dans le DOM
+  for (let i = slice.length - 1; i >= 0; i--) {
+    const card = buildCard(slice[i]);
+    card.dataset.depth = i; // 0 = dessus, 1 et 2 = dessous
+    if (i === 0) card._enableDrag(); // drag seulement sur la carte du dessus
     stack.appendChild(card);
-  });
+  }
 }
 
 function buildCard(item) {
@@ -558,7 +561,11 @@ function buildCard(item) {
 
   const photo = document.createElement("div");
   photo.className = "card-photo";
-  if (d.photos && d.photos[0]) photo.style.backgroundImage = "url('" + d.photos[0].url + "')";
+  if (d.photos && d.photos[0]) {
+    photo.style.backgroundImage = "url('" + d.photos[0].url + "')";
+  } else {
+    photo.style.background = "linear-gradient(135deg, var(--primary), var(--accent))";
+  }
   const grad = document.createElement("div");
   grad.className = "card-grad";
 
@@ -607,7 +614,8 @@ function buildCard(item) {
   card.appendChild(nopeStamp);
   card.appendChild(info);
 
-  enableDrag(card, likeStamp, nopeStamp);
+  // Le drag sera active uniquement sur la carte du dessus (voir renderSwipeCards)
+  card._enableDrag = () => enableDrag(card, likeStamp, nopeStamp);
   return card;
 }
 
