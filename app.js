@@ -49,6 +49,8 @@ let swipeQueue = [];          // profils a swiper
 let activeChat = null;        // {matchId, otherUid, otherName}
 let chatUnsub = null;         // unsubscribe du listener chat
 let matchesUnsub = null;
+let unreadCounts = {};        // { matchId: nombre de non-lus }
+let unreadUnsubs = {};        // { matchId: unsubscribe }
 
 // ===== Helpers DOM =====
 const $ = (id) => document.getElementById(id);
@@ -355,7 +357,20 @@ document.querySelectorAll(".nav-btn").forEach((btn) => {
 
 function enterApp() {
   showScreen("app");
+  startMatchesListener();  // ecoute globale pour les badges de notification
   switchView("discover");
+}
+
+// Ecoute permanente des matchs pour alimenter les pastilles meme hors onglet Messages
+function startMatchesListener() {
+  if (matchesUnsub) matchesUnsub();
+  const q = query(
+    collection(db, "matches"),
+    where("users", "array-contains", currentUser.uid)
+  );
+  matchesUnsub = onSnapshot(q, (snap) => {
+    snap.forEach((d) => listenUnread(d.id));
+  });
 }
 
 // ============================================================
@@ -726,16 +741,18 @@ function showMatchOverlay(item, matchId) {
 // MESSAGES : liste des matchs + chat temps reel
 // ============================================================
 
-// Charge la liste des matchs (temps reel)
+let listDisplayUnsub = null;
+
+// Charge la liste des matchs (temps reel) pour l'affichage
 function loadMatches() {
   $("chat-panel").classList.add("hidden");
-  if (matchesUnsub) matchesUnsub();
+  if (listDisplayUnsub) listDisplayUnsub();
 
   const q = query(
     collection(db, "matches"),
     where("users", "array-contains", currentUser.uid)
   );
-  matchesUnsub = onSnapshot(q, (snap) => {
+  listDisplayUnsub = onSnapshot(q, (snap) => {
     const list = $("match-list");
     list.innerHTML = "";
     if (snap.empty) {
@@ -777,14 +794,65 @@ function loadMatches() {
 
       row.appendChild(avatar);
       row.appendChild(info);
+
+      // Pastille de non-lus pour cette conversation
+      const badge = document.createElement("span");
+      badge.className = "row-badge hidden";
+      badge.id = "row-badge-" + m.id;
+      row.appendChild(badge);
+
       row.addEventListener("click", () => openChat(m.id, otherUid, otherName));
       list.appendChild(row);
+
+      // Ecoute les non-lus de cette conversation en temps reel
+      listenUnread(m.id);
     });
   });
 }
 
-// Ouvre une conversation
-function openChat(matchId, otherUid, otherName) {
+// Ecoute les messages non lus d'une conversation (recus par moi, non lus)
+function listenUnread(matchId) {
+  if (unreadUnsubs[matchId]) return; // deja ecoute
+  const q = query(
+    collection(db, "matches", matchId, "messages"),
+    where("from", "!=", currentUser.uid),
+    where("read", "==", false)
+  );
+  unreadUnsubs[matchId] = onSnapshot(q, (snap) => {
+    unreadCounts[matchId] = snap.size;
+    updateRowBadge(matchId, snap.size);
+    updateTotalBadge();
+  }, (err) => {
+    // En cas d'erreur d'index, on retombe sur un comptage simple
+    console.warn("listenUnread:", err.message);
+  });
+}
+
+// Met a jour la pastille d'une ligne de conversation
+function updateRowBadge(matchId, count) {
+  const badge = document.getElementById("row-badge-" + matchId);
+  if (!badge) return;
+  if (count > 0) {
+    badge.textContent = count > 9 ? "9+" : count;
+    badge.classList.remove("hidden");
+  } else {
+    badge.classList.add("hidden");
+  }
+}
+
+// Met a jour la pastille totale sur l'onglet Messages
+function updateTotalBadge() {
+  const total = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
+  const badge = $("nav-msg-badge");
+  if (total > 0) {
+    badge.textContent = total > 9 ? "9+" : total;
+    badge.classList.remove("hidden");
+  } else {
+    badge.classList.add("hidden");
+  }
+}
+
+
   activeChat = { matchId, otherUid, otherName };
   $("chat-with").textContent = otherName;
   $("chat-messages").innerHTML = "";
@@ -795,18 +863,53 @@ function openChat(matchId, otherUid, otherName) {
     collection(db, "matches", matchId, "messages"),
     orderBy("at", "asc")
   );
-  chatUnsub = onSnapshot(q, (snap) => {
+  chatUnsub = onSnapshot(q, async (snap) => {
     const box = $("chat-messages");
     box.innerHTML = "";
+    const toMarkRead = [];
+
     snap.forEach((d) => {
       const msg = d.data();
+      const isMine = msg.from === currentUser.uid;
       const el = document.createElement("div");
-      el.className = "msg " + (msg.from === currentUser.uid ? "sent" : "received");
-      el.textContent = msg.text;
+      el.className = "msg " + (isMine ? "sent" : "received");
+
+      const textSpan = document.createElement("span");
+      textSpan.className = "msg-text";
+      textSpan.textContent = msg.text;
+      el.appendChild(textSpan);
+
+      // Ticks uniquement sur MES messages (envoyes par moi)
+      if (isMine) {
+        const ticks = document.createElement("span");
+        ticks.className = "msg-ticks" + (msg.read ? " read" : "");
+        ticks.innerHTML = msg.read ? doubleTickSVG() : singleTickSVG();
+        el.appendChild(ticks);
+      }
+
       box.appendChild(el);
+
+      // Si le message vient de l'autre et n'est pas lu -> a marquer comme lu
+      if (!isMine && !msg.read) toMarkRead.push(d.id);
     });
     box.scrollTop = box.scrollHeight;
+
+    // Marque les messages recus comme lus
+    for (const msgId of toMarkRead) {
+      try {
+        await updateDoc(doc(db, "matches", matchId, "messages", msgId), { read: true });
+      } catch (e) { console.error(e); }
+    }
   });
+}
+
+// SVG : un tick (envoye, non lu)
+function singleTickSVG() {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+}
+// SVG : deux ticks (lu)
+function doubleTickSVG() {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 7 9 18 5 14"></polyline><polyline points="23 7 14 18 13.5 17.5"></polyline></svg>';
 }
 
 $("btn-back-messages").addEventListener("click", () => {
@@ -824,11 +927,13 @@ async function sendMessage() {
     await addDoc(collection(db, "matches", activeChat.matchId, "messages"), {
       from: currentUser.uid,
       text,
+      read: false,
       at: serverTimestamp()
     });
     await updateDoc(doc(db, "matches", activeChat.matchId), {
       lastMessage: text,
-      lastMessageAt: serverTimestamp()
+      lastMessageAt: serverTimestamp(),
+      lastSender: currentUser.uid
     });
   } catch (e) { console.error("Erreur envoi :", e); }
 }
@@ -841,7 +946,11 @@ $("chat-input").addEventListener("keydown", (e) => { if (e.key === "Enter") send
 onAuthStateChanged(auth, async (user) => {
   // Nettoyage des listeners
   if (matchesUnsub) { matchesUnsub(); matchesUnsub = null; }
+  if (listDisplayUnsub) { listDisplayUnsub(); listDisplayUnsub = null; }
   if (chatUnsub) { chatUnsub(); chatUnsub = null; }
+  Object.values(unreadUnsubs).forEach((u) => u && u());
+  unreadUnsubs = {};
+  unreadCounts = {};
 
   if (!user) {
     currentUser = null;
