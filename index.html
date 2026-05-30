@@ -12,10 +12,38 @@
 <body>
 
   <!-- ============================================================ -->
-  <!-- ÉCRAN AUTH (non connecté)                                    -->
+  <!-- LANDING (écran d'accueil avant connexion)                   -->
   <!-- ============================================================ -->
-  <div id="auth-screen" class="screen auth-screen">
+  <div id="landing-screen" class="screen landing-screen">
+    <div class="landing-inner">
+      <div class="brand-mark big"></div>
+      <h1 class="landing-title">Bille Helping</h1>
+      <p class="landing-tagline">Rencontre des gens pres de toi,<br>en toute confidentialite.</p>
+      <ul class="landing-features">
+        <li>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+          <span>Position arrondie a ~1 km, jamais exacte</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+          <span>Tes donnees restent en Europe (RGPD)</span>
+        </li>
+        <li>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          <span>Reserve aux adultes (18 ans et plus)</span>
+        </li>
+      </ul>
+      <button id="btn-landing-start" class="btn btn-primary btn-block">Commencer</button>
+      <button id="btn-landing-cgu" class="link-btn">Conditions & confidentialite</button>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- AUTH                                                         -->
+  <!-- ============================================================ -->
+  <div id="auth-screen" class="screen auth-screen hidden">
     <div class="auth-card">
+      <button id="btn-auth-back" class="link-btn back-link">&larr; Retour</button>
       <div class="brand">
         <div class="brand-mark"></div>
         <h1>Bille Helping</h1>
@@ -84,7 +112,7 @@
   </div>
 
   <!-- ============================================================ -->
-  <!-- ÉCRAN COMPLÉTION DE PROFIL (obligatoire après inscription)   -->
+  <!-- ONBOARDING                                                   -->
   <!-- ============================================================ -->
   <div id="onboarding-screen" class="screen onboarding-screen hidden">
     <div class="onboarding-card">
@@ -96,7 +124,6 @@
         <span id="onb-progress-label" class="progress-label">0%</span>
       </div>
 
-      <!-- Photos (obligatoire) -->
       <div class="onb-section">
         <h3>Tes photos <span class="req">obligatoire</span></h3>
         <p class="hint">Ajoute au moins une photo. Elles seront visibles par les autres membres.</p>
@@ -106,14 +133,12 @@
         <p id="photo-status" class="status"></p>
       </div>
 
-      <!-- Bio -->
       <div class="onb-section">
         <h3>Ta bio</h3>
         <textarea id="bio-input" maxlength="300" rows="3" placeholder="Quelques mots sur toi..."></textarea>
         <span class="char-count"><span id="bio-count">0</span>/300</span>
       </div>
 
-      <!-- Centres d'intérêt -->
       <div class="onb-section">
         <h3>Centres d'interet</h3>
         <div id="interests-chips" class="chips"></div>
@@ -125,22 +150,26 @@
   </div>
 
   <!-- ============================================================ -->
-  <!-- APP PRINCIPALE (connecté + profil complet)                   -->
+  <!-- APP PRINCIPALE                                               -->
   <!-- ============================================================ -->
   <div id="app-screen" class="screen app-screen hidden">
 
-    <!-- Header -->
     <header class="app-header">
       <div class="brand-mark small"></div>
       <span class="app-title">Bille Helping</span>
+      <button id="btn-open-likes" class="header-action" title="Qui m'a like">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+        <span id="likes-badge" class="header-badge hidden">0</span>
+      </button>
     </header>
 
-    <!-- ===== Onglet DÉCOUVRIR (swipe) ===== -->
+    <!-- ===== DÉCOUVRIR ===== -->
     <section id="view-discover" class="view active">
       <div id="swipe-area" class="swipe-area">
         <div id="swipe-empty" class="swipe-empty hidden">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
           <p>Plus personne dans ton secteur pour l'instant.</p>
-          <p class="hint">Reviens plus tard ou elargis ta zone !</p>
+          <p class="hint">Reviens plus tard ou elargis ta zone dans les parametres !</p>
         </div>
         <div id="card-stack" class="card-stack"></div>
       </div>
@@ -148,80 +177,67 @@
         <button id="btn-pass" class="circle-btn pass" title="Passer">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
+        <button id="btn-info" class="circle-btn info" title="Voir le profil">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+        </button>
         <button id="btn-like" class="circle-btn like" title="J'aime">
           <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"></path></svg>
         </button>
       </div>
     </section>
 
-    <!-- ===== Onglet MESSAGES ===== -->
+    <!-- ===== MESSAGES ===== -->
     <section id="view-messages" class="view">
       <h2 class="view-title">Messages</h2>
       <div id="match-list" class="match-list"></div>
       <div id="no-matches" class="empty-state hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
         <p>Pas encore de match.</p>
         <p class="hint">Like des profils pour commencer a discuter !</p>
       </div>
-
-      <!-- Conversation ouverte -->
-      <div id="chat-panel" class="chat-panel hidden">
-        <div class="chat-header">
-          <button id="btn-back-messages" class="back-btn" title="Retour">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
-          </button>
-          <span id="chat-with" class="chat-with"></span>
-        </div>
-        <div id="chat-messages" class="chat-messages"></div>
-        <div class="chat-input-row">
-          <input type="text" id="chat-input" placeholder="Ecris un message..." maxlength="500" />
-          <button id="btn-send" class="send-btn" title="Envoyer">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-          </button>
-        </div>
-      </div>
     </section>
 
-    <!-- ===== Onglet PROFIL ===== -->
+    <!-- ===== PROFIL ===== -->
     <section id="view-profile" class="view">
       <h2 class="view-title">Mon profil</h2>
-
       <div class="profile-photos" id="profile-photos"></div>
-
       <div class="profile-head">
         <span id="profile-name" class="profile-name"></span>
         <span id="profile-age" class="profile-age"></span>
       </div>
       <p id="profile-bio" class="profile-bio"></p>
+      <div id="profile-interests" class="profile-interests"></div>
 
-      <!-- Contrôles de visibilité -->
+      <button id="btn-edit-profile" class="btn btn-ghost btn-block">Modifier mon profil</button>
+
       <div class="visibility-section">
         <h3>Confidentialite</h3>
         <p class="hint">Choisis ce que les autres peuvent voir.</p>
-
-        <label class="toggle-row">
-          <span>Afficher mon age</span>
-          <input type="checkbox" id="vis-age" class="toggle" checked />
-        </label>
-        <label class="toggle-row">
-          <span>Afficher ma distance</span>
-          <input type="checkbox" id="vis-distance" class="toggle" checked />
-        </label>
-        <label class="toggle-row">
-          <span>Afficher ma bio</span>
-          <input type="checkbox" id="vis-bio" class="toggle" checked />
-        </label>
-        <label class="toggle-row">
-          <span>Afficher mes centres d'interet</span>
-          <input type="checkbox" id="vis-interests" class="toggle" checked />
-        </label>
-        <label class="toggle-row">
-          <span>Etre visible dans Decouvrir</span>
-          <input type="checkbox" id="vis-discoverable" class="toggle" checked />
-        </label>
+        <label class="toggle-row"><span>Afficher mon age</span><input type="checkbox" id="vis-age" class="toggle" checked /></label>
+        <label class="toggle-row"><span>Afficher ma distance</span><input type="checkbox" id="vis-distance" class="toggle" checked /></label>
+        <label class="toggle-row"><span>Afficher ma bio</span><input type="checkbox" id="vis-bio" class="toggle" checked /></label>
+        <label class="toggle-row"><span>Afficher mes centres d'interet</span><input type="checkbox" id="vis-interests" class="toggle" checked /></label>
+        <label class="toggle-row"><span>Etre visible dans Decouvrir</span><input type="checkbox" id="vis-discoverable" class="toggle" checked /></label>
         <p id="vis-status" class="status"></p>
       </div>
 
-      <!-- Localisation -->
+      <div class="profile-section">
+        <h3>Preferences de recherche</h3>
+        <div class="pref-row">
+          <label for="pref-distance">Distance maximale : <span id="pref-distance-val">50</span> km</label>
+          <input type="range" id="pref-distance" min="1" max="100" value="50" class="range" />
+        </div>
+        <div class="pref-row">
+          <label for="pref-age-min">Age minimum : <span id="pref-age-min-val">18</span> ans</label>
+          <input type="range" id="pref-age-min" min="18" max="80" value="18" class="range" />
+        </div>
+        <div class="pref-row">
+          <label for="pref-age-max">Age maximum : <span id="pref-age-max-val">80</span> ans</label>
+          <input type="range" id="pref-age-max" min="18" max="80" value="80" class="range" />
+        </div>
+        <p id="pref-status" class="status"></p>
+      </div>
+
       <div class="profile-section">
         <h3>Localisation</h3>
         <p id="geo-status" class="hint">Localisation non activee.</p>
@@ -229,7 +245,11 @@
         <p class="micro-note">Ta position exacte n'est jamais stockee (arrondie a ~1 km).</p>
       </div>
 
-      <!-- RGPD -->
+      <div class="profile-section">
+        <h3>Aide & infos</h3>
+        <button id="btn-show-cgu" class="btn btn-ghost btn-small btn-block">Conditions & confidentialite</button>
+      </div>
+
       <div class="profile-section danger-zone">
         <h3>Mes donnees</h3>
         <button id="btn-export" class="btn btn-ghost btn-small">Exporter mes donnees</button>
@@ -238,7 +258,6 @@
       </div>
     </section>
 
-    <!-- Barre de navigation -->
     <nav class="bottom-nav">
       <button id="nav-discover" class="nav-btn active" data-view="discover">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"></path></svg>
@@ -256,6 +275,174 @@
     </nav>
   </div>
 
+  <!-- ============================================================ -->
+  <!-- CHAT (plein écran)                                           -->
+  <!-- ============================================================ -->
+  <div id="chat-panel" class="chat-panel hidden">
+    <div class="chat-header">
+      <button id="btn-back-messages" class="back-btn" title="Retour">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+      </button>
+      <span id="chat-with" class="chat-with"></span>
+      <button id="btn-chat-menu" class="header-action" title="Options">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
+      </button>
+    </div>
+    <div id="chat-messages" class="chat-messages"></div>
+    <div class="chat-input-row">
+      <input type="text" id="chat-input" placeholder="Ecris un message..." maxlength="500" />
+      <button id="btn-send" class="send-btn" title="Envoyer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- PROFIL DÉTAILLÉ (plein écran, au tap sur une carte)         -->
+  <!-- ============================================================ -->
+  <div id="detail-panel" class="detail-panel hidden">
+    <button id="btn-detail-close" class="detail-close" title="Fermer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </button>
+    <div id="detail-gallery" class="detail-gallery"></div>
+    <div class="detail-body">
+      <div class="detail-head">
+        <span id="detail-name" class="detail-name"></span>
+        <span id="detail-age" class="detail-age"></span>
+      </div>
+      <p id="detail-distance" class="detail-distance"></p>
+      <p id="detail-bio" class="detail-bio"></p>
+      <div id="detail-interests" class="detail-interests"></div>
+      <button id="btn-report" class="link-btn danger-link">Signaler ce profil</button>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- QUI M'A LIKÉ (plein écran)                                   -->
+  <!-- ============================================================ -->
+  <div id="likes-panel" class="likes-panel hidden">
+    <div class="chat-header">
+      <button id="btn-likes-close" class="back-btn" title="Retour">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+      </button>
+      <span class="chat-with">Qui m'a like</span>
+    </div>
+    <div id="likes-grid" class="likes-grid"></div>
+    <div id="no-likes" class="empty-state hidden">
+      <p>Personne ne t'a like pour l'instant.</p>
+      <p class="hint">Continue a swiper !</p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- ÉDITION DU PROFIL (modale)                                   -->
+  <!-- ============================================================ -->
+  <div id="edit-modal" class="modal hidden">
+    <div class="modal-card">
+      <h3>Modifier mon profil</h3>
+      <div class="onb-section">
+        <h4>Photos</h4>
+        <div id="edit-photo-grid" class="photo-grid"></div>
+        <input type="file" id="edit-photo-input" accept="image/*" class="hidden" />
+        <button id="btn-edit-add-photo" class="btn btn-ghost btn-small">+ Ajouter une photo</button>
+        <p id="edit-photo-status" class="status"></p>
+      </div>
+      <div class="onb-section">
+        <h4>Bio</h4>
+        <textarea id="edit-bio" maxlength="300" rows="3"></textarea>
+        <span class="char-count"><span id="edit-bio-count">0</span>/300</span>
+      </div>
+      <div class="onb-section">
+        <h4>Centres d'interet</h4>
+        <div id="edit-interests" class="chips"></div>
+      </div>
+      <button id="btn-save-profile" class="btn btn-primary btn-block">Enregistrer</button>
+      <button id="btn-cancel-edit" class="btn btn-ghost btn-small btn-block">Annuler</button>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- SIGNALEMENT (modale)                                         -->
+  <!-- ============================================================ -->
+  <div id="report-modal" class="modal hidden">
+    <div class="modal-card">
+      <h3>Signaler ce profil</h3>
+      <p class="hint">Aide-nous a garder la communaute sure. Pourquoi signales-tu ce profil ?</p>
+      <div class="report-reasons">
+        <label class="radio-row"><input type="radio" name="report-reason" value="faux-profil" /><span>Faux profil / arnaque</span></label>
+        <label class="radio-row"><input type="radio" name="report-reason" value="contenu-inapproprie" /><span>Photos ou contenu inapproprie</span></label>
+        <label class="radio-row"><input type="radio" name="report-reason" value="harcelement" /><span>Harcelement ou propos deplaces</span></label>
+        <label class="radio-row"><input type="radio" name="report-reason" value="mineur" /><span>Semble etre mineur</span></label>
+        <label class="radio-row"><input type="radio" name="report-reason" value="autre" /><span>Autre</span></label>
+      </div>
+      <button id="btn-confirm-report" class="btn btn-danger btn-block">Signaler et bloquer</button>
+      <button id="btn-cancel-report" class="btn btn-ghost btn-small btn-block">Annuler</button>
+      <p id="report-status" class="status"></p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- MENU CONVERSATION (modale : bloquer/signaler)               -->
+  <!-- ============================================================ -->
+  <div id="chat-menu-modal" class="modal hidden">
+    <div class="modal-card">
+      <h3>Options</h3>
+      <button id="btn-chat-report" class="btn btn-danger btn-block">Signaler et bloquer</button>
+      <button id="btn-chat-unmatch" class="btn btn-ghost btn-block">Supprimer le match</button>
+      <button id="btn-chat-menu-cancel" class="btn btn-ghost btn-small btn-block">Annuler</button>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- CGU / CONFIDENTIALITÉ (plein écran)                         -->
+  <!-- ============================================================ -->
+  <div id="cgu-panel" class="cgu-panel hidden">
+    <div class="chat-header">
+      <button id="btn-cgu-close" class="back-btn" title="Retour">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+      </button>
+      <span class="chat-with">Conditions & confidentialite</span>
+    </div>
+    <div class="cgu-content">
+      <h3>Conditions d'utilisation</h3>
+      <p>Bille Helping est un service de mise en relation reserve aux personnes agees de 18 ans ou plus. En utilisant l'application, tu certifies etre majeur et accepter les presentes conditions.</p>
+
+      <h4>1. Acces au service</h4>
+      <p>L'inscription requiert une adresse e-mail valide et la creation d'un profil complet. Tu es responsable de la confidentialite de tes identifiants et de l'exactitude des informations que tu fournis.</p>
+
+      <h4>2. Comportement des membres</h4>
+      <p>Tu t'engages a respecter les autres membres. Sont interdits : le harcelement, les propos haineux, les faux profils, l'usurpation d'identite, la diffusion de contenu illegal ou inapproprie, et toute sollicitation commerciale.</p>
+
+      <h4>3. Signalement et moderation</h4>
+      <p>Tout membre peut signaler un profil au comportement inapproprie. Les signalements sont examines et peuvent entrainer la suspension ou la suppression du compte concerne.</p>
+
+      <h4>4. Contenu</h4>
+      <p>Tu conserves tes droits sur les photos que tu publies, mais tu accordes a Bille Helping le droit de les afficher dans le cadre du service. Tu garantis disposer des droits sur les contenus publies.</p>
+
+      <h3>Politique de confidentialite</h3>
+
+      <h4>5. Donnees collectees</h4>
+      <p>Nous collectons : ton adresse e-mail, ton pseudo, ta date de naissance, ton genre, ton orientation de recherche, ta bio, tes centres d'interet, tes photos et ta localisation approximative.</p>
+
+      <h4>6. Localisation</h4>
+      <p>Ta position exacte n'est jamais enregistree. Elle est arrondie a une grille d'environ 1 km avant tout stockage. Seule une distance approximative est affichee aux autres membres, et uniquement si tu l'autorises.</p>
+
+      <h4>7. Hebergement des donnees</h4>
+      <p>Tes donnees sont hebergees en Europe (region eur3). Elles ne sont pas vendues a des tiers.</p>
+
+      <h4>8. Tes droits (RGPD)</h4>
+      <p>Tu disposes d'un droit d'acces, de rectification et de suppression de tes donnees. Depuis ton profil, tu peux a tout moment exporter tes donnees ou supprimer definitivement ton compte.</p>
+
+      <h4>9. Verification d'identite</h4>
+      <p>Une verification d'identite optionnelle pourra etre proposee via un prestataire specialise. Bille Helping ne stocke jamais de piece d'identite : seul le resultat de la verification est conserve.</p>
+
+      <h4>10. Contact</h4>
+      <p>Pour toute question relative a tes donnees, tu peux nous contacter via l'adresse indiquee sur le site.</p>
+
+      <p class="cgu-footer">Derniere mise a jour : 2026. Ce document est un modele a faire valider juridiquement avant tout lancement reel.</p>
+    </div>
+  </div>
+
   <!-- Overlay match -->
   <div id="match-overlay" class="match-overlay hidden">
     <div class="match-pop">
@@ -265,6 +452,9 @@
       <button id="btn-match-continue" class="btn btn-ghost">Continuer a swiper</button>
     </div>
   </div>
+
+  <!-- Toast (notifications légères) -->
+  <div id="toast" class="toast hidden"></div>
 
   <script type="module" src="app.js"></script>
 </body>
