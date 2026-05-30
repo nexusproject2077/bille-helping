@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bille Helping</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="card">
+    <h1>Bille Helping</h1>
+    <p class="subtitle">Rencontres entre adultes consentants</p>
+
+    <!-- Onglets Connexion / Inscription -->
+    <div class="tabs">
+      <button id="tab-login" class="tab active">Connexion</button>
+      <button id="tab-signup" class="tab">Inscription</button>
+    </div>
+
+    <!-- Champs communs -->
+    <div class="field">
+      <label for="email">Adresse e-mail</label>
+      <input type="email" id="email" placeholder="ton@email.com" autocomplete="email" />
+    </div>
+
+    <div class="field">
+      <label for="password">Mot de passe</label>
+      <input type="password" id="password" placeholder="6 caracteres minimum" autocomplete="current-password" />
+    </div>
+
+    <!-- Champs d'inscription uniquement -->
+    <div id="signup-fields" class="hidden">
+      <div class="field">
+        <label for="pseudo">Pseudo</label>
+        <input type="text" id="pseudo" placeholder="Ton pseudo public" maxlength="30" />
+      </div>
+
+      <div class="field">
+        <label for="birthdate">Date de naissance</label>
+        <input type="date" id="birthdate" />
+      </div>
+
+      <div class="field">
+        <label for="gender">Je suis</label>
+        <select id="gender">
+          <option value="">-- Choisir --</option>
+          <option value="homme">Un homme</option>
+          <option value="femme">Une femme</option>
+          <option value="autre">Autre</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="seeking">Je recherche</label>
+        <select id="seeking">
+          <option value="">-- Choisir --</option>
+          <option value="hommes">Des hommes</option>
+          <option value="femmes">Des femmes</option>
+          <option value="tous">Tout le monde</option>
+        </select>
+      </div>
+
+      <!-- Consentements RGPD (cases separees, obligatoires) -->
+      <div class="consent">
+        <label class="checkbox">
+          <input type="checkbox" id="consent-age" />
+          <span>Je certifie avoir 18 ans ou plus.</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="consent-data" />
+          <span>J'accepte que mes donnees (dont localisation approximative et orientation) soient traitees pour le service de mise en relation, conformement a la politique de confidentialite.</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="btn-submit" class="btn btn-primary">Se connecter</button>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <!-- Bloc connecte -->
+    <div id="logged-in" class="logged-in hidden">
+      <p>Connecte en tant que <strong id="user-email"></strong></p>
+      <p id="profile-info" class="profile-info"></p>
+      <button id="btn-logout" class="btn btn-ghost">Se deconnecter</button>
+    </div>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
