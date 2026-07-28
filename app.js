@@ -38,6 +38,15 @@ const INTERESTS = [
   "Sport", "Musique", "Cinema", "Voyages", "Cuisine", "Jeux video",
   "Lecture", "Sorties", "Nature", "Art", "Tech", "Fitness"
 ];
+// Intentions de rencontre (mise en relation entre adultes consentants)
+const INTENTIONS = [
+  "Ce soir", "Sans lendemain", "Plan regulier", "Discuter d'abord",
+  "Amities", "Relation", "On verra"
+];
+// Categories de signalement considerees comme manifestement illicites (DSA / droit penal)
+const ILLEGAL_REPORT_REASONS = ["mineur", "image-intime-non-consentie", "non-consentement"];
+// Duree pendant laquelle le statut "Disponible maintenant" reste actif (3 h)
+const LOOKING_NOW_WINDOW_MS = 3 * 60 * 60 * 1000;
 
 // ===== Etat global =====
 let mode = "login";
@@ -45,6 +54,7 @@ let currentUser = null;       // firebase auth user
 let currentProfile = null;    // doc Firestore
 let onbPhotos = [];           // {url, path}
 let onbInterests = [];
+let onbIntentions = [];
 let swipeQueue = [];          // profils a swiper
 let activeChat = null;        // {matchId, otherUid, otherName}
 let chatUnsub = null;         // unsubscribe du listener chat
@@ -136,6 +146,7 @@ function validateSignup() {
   if (!$("seeking").value) return "Indique ce que tu recherches.";
   if (!$("consent-age").checked) return "Tu dois certifier avoir 18 ans ou plus.";
   if (!$("consent-data").checked) return "Tu dois accepter le traitement des donnees.";
+  if (!$("consent-adult").checked) return "Tu dois accepter l'acces au contenu adulte entre adultes consentants.";
   return null;
 }
 
@@ -162,15 +173,18 @@ $("btn-submit").addEventListener("click", async () => {
       seeking: $("seeking").value,
       bio: "",
       interests: [],
+      intentions: [],
       photos: [],
       identityVerified: false,
       location: null,
       geohash: null,
+      lookingNow: false,
+      lookingNowAt: null,
       profileComplete: false,
       visibility: { age: true, distance: true, bio: true, interests: true, discoverable: true },
       searchPrefs: { maxDistance: 50, ageMin: 18, ageMax: 80 },
       blocked: [],
-      consent: { age18: true, dataProcessing: true, consentedAt: serverTimestamp() },
+      consent: { age18: true, dataProcessing: true, adultContent: true, consentedAt: serverTimestamp() },
       createdAt: serverTimestamp()
     });
     authStatus("Compte cree !", "success");
@@ -323,6 +337,27 @@ function renderInterests() {
   });
 }
 
+// ----- Intentions -----
+function renderIntentions() {
+  const box = $("intentions-chips");
+  if (!box) return;
+  box.innerHTML = "";
+  INTENTIONS.forEach((label) => {
+    const chip = document.createElement("button");
+    chip.className = "chip intention" + (onbIntentions.includes(label) ? " selected" : "");
+    chip.textContent = label;
+    chip.addEventListener("click", () => {
+      if (onbIntentions.includes(label)) {
+        onbIntentions = onbIntentions.filter((x) => x !== label);
+      } else {
+        onbIntentions.push(label);
+      }
+      renderIntentions();
+    });
+    box.appendChild(chip);
+  });
+}
+
 // ----- Validation finale -----
 $("btn-finish-onboarding").addEventListener("click", async () => {
   if (computeCompletion() < 100) return;
@@ -331,11 +366,13 @@ $("btn-finish-onboarding").addEventListener("click", async () => {
       photos: onbPhotos,
       bio: $("bio-input").value.trim(),
       interests: onbInterests,
+      intentions: onbIntentions,
       profileComplete: true
     });
     currentProfile.photos = onbPhotos;
     currentProfile.bio = $("bio-input").value.trim();
     currentProfile.interests = onbInterests;
+    currentProfile.intentions = onbIntentions;
     currentProfile.profileComplete = true;
     enterApp();
   } catch (e) {
@@ -349,10 +386,12 @@ $("btn-logout-onb").addEventListener("click", () => signOut(auth));
 function initOnboarding() {
   onbPhotos = currentProfile.photos || [];
   onbInterests = currentProfile.interests || [];
+  onbIntentions = currentProfile.intentions || [];
   $("bio-input").value = currentProfile.bio || "";
   $("bio-count").textContent = ($("bio-input").value || "").length;
   renderOnbPhotos();
   renderInterests();
+  renderIntentions();
   updateProgress();
   showScreen("onboarding");
 }
@@ -418,6 +457,21 @@ function renderProfile() {
     pi.appendChild(c);
   });
 
+  // Intentions
+  const pin = $("profile-intentions");
+  if (pin) {
+    pin.innerHTML = "";
+    (p.intentions || []).forEach((it) => {
+      const c = document.createElement("span");
+      c.className = "chip-static intention";
+      c.textContent = it;
+      pin.appendChild(c);
+    });
+  }
+
+  // Statut "Disponible maintenant" (expire automatiquement)
+  if ($("looking-now")) $("looking-now").checked = isLookingNowActive(p);
+
   // Etat des toggles de visibilite
   const v = p.visibility || {};
   $("vis-age").checked = v.age !== false;
@@ -462,6 +516,35 @@ function visStatus(msg, type) {
 }
 ["vis-age", "vis-distance", "vis-bio", "vis-interests", "vis-discoverable"]
   .forEach((id) => $(id).addEventListener("change", saveVisibility));
+
+// ----- Disponible maintenant (statut ephemere) -----
+// Vrai si le membre s'est declare dispo il y a moins de LOOKING_NOW_WINDOW_MS.
+function isLookingNowActive(p) {
+  if (!p || !p.lookingNow || !p.lookingNowAt) return false;
+  const ms = p.lookingNowAt.seconds ? p.lookingNowAt.seconds * 1000 : Date.parse(p.lookingNowAt);
+  if (!ms) return false;
+  return (Date.now() - ms) < LOOKING_NOW_WINDOW_MS;
+}
+
+const lookingNowEl = $("looking-now");
+if (lookingNowEl) {
+  lookingNowEl.addEventListener("change", async () => {
+    const on = lookingNowEl.checked;
+    try {
+      await updateDoc(doc(db, "users", currentUser.uid), {
+        lookingNow: on,
+        lookingNowAt: on ? serverTimestamp() : null
+      });
+      currentProfile.lookingNow = on;
+      // Approximation locale immediate (le serverTimestamp sera relu au prochain chargement)
+      currentProfile.lookingNowAt = on ? { seconds: Math.floor(Date.now() / 1000) } : null;
+      toast(on ? "Tu es visible comme disponible (3 h)." : "Statut disponible desactive.");
+    } catch (e) {
+      lookingNowEl.checked = !on;
+      toast("Erreur : " + e.message);
+    }
+  });
+}
 
 // ----- Geolocalisation (floutee) -----
 function blurCoordinate(v) { return Math.round(v / GRID_DEGREES) * GRID_DEGREES; }
@@ -534,6 +617,29 @@ function matchesSeeking(me, other) {
   return true;
 }
 
+// Nombre d'elements communs entre deux listes
+function sharedCount(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return 0;
+  const setB = new Set(b);
+  return a.filter((x) => setB.has(x)).length;
+}
+
+// Score de compatibilite (0-100) : intentions communes > interets communs,
+// bonus proximite et bonus "disponible maintenant".
+function compatibilityScore(me, other, distKm, maxRadiusM) {
+  let score = 0;
+  // Intentions communes : fort poids (jusqu'a 45)
+  score += Math.min(sharedCount(me.intentions, other.intentions), 3) * 15;
+  // Centres d'interet communs : poids moyen (jusqu'a 30)
+  score += Math.min(sharedCount(me.interests, other.interests), 3) * 10;
+  // Proximite : plus c'est proche, plus le score monte (jusqu'a 15)
+  const maxKm = (maxRadiusM || 50000) / 1000;
+  score += Math.max(0, 15 * (1 - (distKm / maxKm)));
+  // Bonus "disponible maintenant"
+  if (isLookingNowActive(other)) score += 10;
+  return score;
+}
+
 // Charge les profils proches a swiper
 async function loadSwipeQueue() {
   $("swipe-empty").classList.add("hidden");
@@ -577,10 +683,13 @@ async function loadSwipeQueue() {
       const distKm = distanceBetween([data.location.lat, data.location.lng], center);
       if (distKm * 1000 > maxRadius) continue;
 
-      queue.push({ uid: d.id, data, distanceKm: distKm });
+      const item = { uid: d.id, data, distanceKm: distKm };
+      item.compat = compatibilityScore(currentProfile, data, distKm, maxRadius);
+      queue.push(item);
     }
   }
-  queue.sort((a, b) => a.distanceKm - b.distanceKm);
+  // Tri par score de compatibilite (decroissant), la distance restant un facteur du score
+  queue.sort((a, b) => b.compat - a.compat);
   swipeQueue = queue;
   renderSwipeCards();
 }
@@ -623,6 +732,14 @@ function buildCard(item) {
   const grad = document.createElement("div");
   grad.className = "card-grad";
 
+  // Badge "Disponible maintenant" (appose plus bas pour rester au-dessus)
+  let dispo = null;
+  if (isLookingNowActive(d)) {
+    dispo = document.createElement("div");
+    dispo.className = "card-dispo";
+    dispo.textContent = "Dispo maintenant";
+  }
+
   const info = document.createElement("div");
   info.className = "card-info";
   const name = document.createElement("div");
@@ -642,6 +759,18 @@ function buildCard(item) {
     bio.className = "card-bio";
     bio.textContent = d.bio;
     info.appendChild(bio);
+  }
+
+  if (d.intentions && d.intentions.length) {
+    const chips = document.createElement("div");
+    chips.className = "card-chips";
+    d.intentions.forEach((it) => {
+      const c = document.createElement("span");
+      c.className = "card-chip intention";
+      c.textContent = it;
+      chips.appendChild(c);
+    });
+    info.appendChild(chips);
   }
 
   if (v.interests !== false && d.interests && d.interests.length) {
@@ -664,6 +793,7 @@ function buildCard(item) {
 
   card.appendChild(photo);
   card.appendChild(grad);
+  if (dispo) card.appendChild(dispo);
   card.appendChild(likeStamp);
   card.appendChild(nopeStamp);
   card.appendChild(info);
@@ -1010,6 +1140,16 @@ function openDetail(item) {
       di.appendChild(c);
     });
   }
+  const din = $("detail-intentions");
+  if (din) {
+    din.innerHTML = "";
+    (d.intentions || []).forEach((it) => {
+      const c = document.createElement("span");
+      c.className = "chip-static intention";
+      c.textContent = it;
+      din.appendChild(c);
+    });
+  }
   $("detail-panel").classList.remove("hidden");
 }
 $("btn-detail-close").addEventListener("click", () => $("detail-panel").classList.add("hidden"));
@@ -1037,11 +1177,15 @@ $("btn-confirm-report").addEventListener("click", async () => {
   const reason = document.querySelector('input[name="report-reason"]:checked');
   if (!reason) { $("report-status").textContent = "Choisis une raison."; $("report-status").className = "status error"; return; }
   try {
-    // Enregistre le signalement
+    // Enregistre le signalement (illicite manifeste => traitement prioritaire DSA)
+    const illegal = ILLEGAL_REPORT_REASONS.includes(reason.value);
     await addDoc(collection(db, "reports"), {
       reporter: currentUser.uid,
       reported: reportTarget.uid,
       reason: reason.value,
+      illegal,
+      priority: illegal ? "urgent" : "normal",
+      status: "pending",
       at: serverTimestamp()
     });
     // Bloque l'utilisateur (ajoute a ma liste de bloques)
@@ -1164,6 +1308,7 @@ async function openLikes() {
 // ============================================================
 let editPhotos = [];
 let editInterests = [];
+let editIntentions = [];
 
 $("btn-edit-profile").addEventListener("click", openEdit);
 $("btn-cancel-edit").addEventListener("click", () => $("edit-modal").classList.add("hidden"));
@@ -1171,10 +1316,12 @@ $("btn-cancel-edit").addEventListener("click", () => $("edit-modal").classList.a
 function openEdit() {
   editPhotos = [...(currentProfile.photos || [])];
   editInterests = [...(currentProfile.interests || [])];
+  editIntentions = [...(currentProfile.intentions || [])];
   $("edit-bio").value = currentProfile.bio || "";
   $("edit-bio-count").textContent = ($("edit-bio").value || "").length;
   renderEditPhotos();
   renderEditInterests();
+  renderEditIntentions();
   $("edit-modal").classList.remove("hidden");
 }
 
@@ -1212,6 +1359,23 @@ function renderEditInterests() {
   });
 }
 
+function renderEditIntentions() {
+  const box = $("edit-intentions");
+  if (!box) return;
+  box.innerHTML = "";
+  INTENTIONS.forEach((label) => {
+    const chip = document.createElement("button");
+    chip.className = "chip intention" + (editIntentions.includes(label) ? " selected" : "");
+    chip.textContent = label;
+    chip.addEventListener("click", () => {
+      if (editIntentions.includes(label)) editIntentions = editIntentions.filter((x) => x !== label);
+      else editIntentions.push(label);
+      renderEditIntentions();
+    });
+    box.appendChild(chip);
+  });
+}
+
 $("edit-bio").addEventListener("input", () => {
   $("edit-bio-count").textContent = $("edit-bio").value.length;
 });
@@ -1238,11 +1402,13 @@ $("btn-save-profile").addEventListener("click", async () => {
     await updateDoc(doc(db, "users", currentUser.uid), {
       photos: editPhotos,
       bio: $("edit-bio").value.trim(),
-      interests: editInterests
+      interests: editInterests,
+      intentions: editIntentions
     });
     currentProfile.photos = editPhotos;
     currentProfile.bio = $("edit-bio").value.trim();
     currentProfile.interests = editInterests;
+    currentProfile.intentions = editIntentions;
     $("edit-modal").classList.add("hidden");
     renderProfile();
     toast("Profil mis a jour.");

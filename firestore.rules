@@ -11,6 +11,7 @@ service cloud.firestore {
                     && request.auth.uid == userId
                     && request.resource.data.consent.age18 == true
                     && request.resource.data.consent.dataProcessing == true
+                    && request.resource.data.consent.adultContent == true
                     && request.resource.data.identityVerified == false;
 
       allow update: if request.auth != null && request.auth.uid == userId;
