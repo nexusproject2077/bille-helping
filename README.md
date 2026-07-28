@@ -17,14 +17,28 @@ Application web (PWA) de mise en relation entre adultes, construite avec une app
 - Champ `identityVerified` prevu pour brancher un prestataire KYC externe (l'app ne stocke jamais de piece d'identite)
 - Geolocalisation prevue en mode **floute** (jamais de position exacte stockee)
 
+## Fonctionnalites
+
+- Decouverte par swipe (cartes) avec proximite geographique (geohash)
+- **Matching par compatibilite** : score base sur les intentions communes,
+  les centres d'interet communs, la proximite et la disponibilite
+- **Intentions de rencontre** (« ce que je cherche ») affichees sur les cartes
+- **Statut « Disponible maintenant »** ephemere (3 h, expiration automatique)
+- Match mutuel + messagerie temps reel avec accuses de lecture
+- Signalement aligne **DSA** (categories illicites traitees en priorite) + blocage
+- Consentement RGPD **granulaire** (age, donnees, contenu adulte), horodate
+- Export des donnees + suppression complete du compte (droit a l'oubli)
+
 ## Structure
 
 | Fichier | Role |
 |---|---|
-| `index.html` | Structure de la page (connexion / inscription) |
+| `index.html` | Structure des ecrans (auth, onboarding, app, chat, modales) |
 | `style.css` | Styles (theme sombre, liquid glass) |
-| `app.js` | Logique : auth, ecriture/lecture du profil Firestore |
+| `app.js` | Logique : auth, profil, swipe/match, chat, moderation |
 | `firestore.rules` | Regles de securite de la base |
+| `storage.rules` | Regles de securite du stockage |
+| `legal/` | Modeles CGU, confidentialite, moderation, registre (a valider) |
 
 ## Securite
 
@@ -33,10 +47,13 @@ Application web (PWA) de mise en relation entre adultes, construite avec une app
 
 ## Statut
 
-Projet en developpement. Ne pas utiliser en production avant :
-- Redaction et validation juridique de la politique de confidentialite et des CGU
-- Mise en place de la moderation et du signalement
-- Validation du cadre juridique global (donnees sensibles)
+Projet en developpement. Des **modeles** de CGU, de politique de
+confidentialite et de moderation sont fournis dans `legal/`. Ne pas utiliser
+en production avant :
+- **Validation juridique** des documents de `legal/` par un avocat specialise
+- Mise en place d'une moderation back-office (les signalements sont deja
+  collectes et priorises, mais leur traitement reste a outiller)
+- Verification d'age via prestataire externe + AIPD/DPIA (donnees sensibles)
 
 ## Licence
 

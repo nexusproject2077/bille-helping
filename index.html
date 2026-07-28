@@ -103,6 +103,10 @@
             <input type="checkbox" id="consent-data" />
             <span>J'accepte que mes donnees (localisation approximative, orientation, photos) soient traitees pour le service de mise en relation, conformement a la politique de confidentialite.</span>
           </label>
+          <label class="checkbox">
+            <input type="checkbox" id="consent-adult" />
+            <span>Je consens a acceder a un service pouvant contenir des contenus a caractere adulte, echanges entre adultes consentants. Je comprends que toute prostitution ou remuneration d'un acte sexuel est interdite (art. 225-5 CP).</span>
+          </label>
         </div>
       </div>
 
@@ -142,6 +146,12 @@
       <div class="onb-section">
         <h3>Centres d'interet</h3>
         <div id="interests-chips" class="chips"></div>
+      </div>
+
+      <div class="onb-section">
+        <h3>Ce que je cherche</h3>
+        <p class="hint">Sois clair sur tes intentions : ca ameliore tes suggestions.</p>
+        <div id="intentions-chips" class="chips"></div>
       </div>
 
       <button id="btn-finish-onboarding" class="btn btn-primary btn-block">Acceder a l'application</button>
@@ -207,8 +217,15 @@
       </div>
       <p id="profile-bio" class="profile-bio"></p>
       <div id="profile-interests" class="profile-interests"></div>
+      <div id="profile-intentions" class="profile-interests"></div>
 
       <button id="btn-edit-profile" class="btn btn-ghost btn-block">Modifier mon profil</button>
+
+      <div class="profile-section">
+        <h3>Disponibilite</h3>
+        <label class="toggle-row"><span>Disponible maintenant</span><input type="checkbox" id="looking-now" class="toggle" /></label>
+        <p class="micro-note">Affiche un badge « Dispo » sur ta carte pendant 3 h, puis se desactive automatiquement.</p>
+      </div>
 
       <div class="visibility-section">
         <h3>Confidentialite</h3>
@@ -313,6 +330,7 @@
       <p id="detail-distance" class="detail-distance"></p>
       <p id="detail-bio" class="detail-bio"></p>
       <div id="detail-interests" class="detail-interests"></div>
+      <div id="detail-intentions" class="detail-interests"></div>
       <button id="btn-report" class="link-btn danger-link">Signaler ce profil</button>
     </div>
   </div>
@@ -356,6 +374,10 @@
         <h4>Centres d'interet</h4>
         <div id="edit-interests" class="chips"></div>
       </div>
+      <div class="onb-section">
+        <h4>Ce que je cherche</h4>
+        <div id="edit-intentions" class="chips"></div>
+      </div>
       <button id="btn-save-profile" class="btn btn-primary btn-block">Enregistrer</button>
       <button id="btn-cancel-edit" class="btn btn-ghost btn-small btn-block">Annuler</button>
     </div>
@@ -369,12 +391,15 @@
       <h3>Signaler ce profil</h3>
       <p class="hint">Aide-nous a garder la communaute sure. Pourquoi signales-tu ce profil ?</p>
       <div class="report-reasons">
-        <label class="radio-row"><input type="radio" name="report-reason" value="faux-profil" /><span>Faux profil / arnaque</span></label>
-        <label class="radio-row"><input type="radio" name="report-reason" value="contenu-inapproprie" /><span>Photos ou contenu inapproprie</span></label>
-        <label class="radio-row"><input type="radio" name="report-reason" value="harcelement" /><span>Harcelement ou propos deplaces</span></label>
         <label class="radio-row"><input type="radio" name="report-reason" value="mineur" /><span>Semble etre mineur</span></label>
+        <label class="radio-row"><input type="radio" name="report-reason" value="image-intime-non-consentie" /><span>Photo intime diffusee sans consentement</span></label>
+        <label class="radio-row"><input type="radio" name="report-reason" value="non-consentement" /><span>Contenu sexuel non sollicite / non-consentement</span></label>
+        <label class="radio-row"><input type="radio" name="report-reason" value="harcelement" /><span>Harcelement, menaces ou haine</span></label>
+        <label class="radio-row"><input type="radio" name="report-reason" value="prostitution" /><span>Prostitution / sollicitation payante / escorte</span></label>
+        <label class="radio-row"><input type="radio" name="report-reason" value="faux-profil" /><span>Faux profil / arnaque</span></label>
         <label class="radio-row"><input type="radio" name="report-reason" value="autre" /><span>Autre</span></label>
       </div>
+      <p class="micro-note">Les contenus manifestement illicites (mineur, non-consentement, image intime) sont traites en priorite sous 24 h.</p>
       <button id="btn-confirm-report" class="btn btn-danger btn-block">Signaler et bloquer</button>
       <button id="btn-cancel-report" class="btn btn-ghost btn-small btn-block">Annuler</button>
       <p id="report-status" class="status"></p>
@@ -417,7 +442,10 @@
       <p>Tout membre peut signaler un profil au comportement inapproprie. Les signalements sont examines et peuvent entrainer la suspension ou la suppression du compte concerne.</p>
 
       <h4>4. Contenu</h4>
-      <p>Tu conserves tes droits sur les photos que tu publies, mais tu accordes a Bille Helping le droit de les afficher dans le cadre du service. Tu garantis disposer des droits sur les contenus publies.</p>
+      <p>Tu conserves tes droits sur les photos que tu publies, mais tu accordes a Bille Helping le droit de les afficher dans le cadre du service. Tu garantis disposer des droits sur les contenus publies, et disposer du consentement explicite de toute personne representee.</p>
+
+      <h4>4 bis. Contenu adulte et interdiction de la prostitution</h4>
+      <p>Bille Helping est un service de <strong>mise en relation libre entre adultes consentants</strong>. Les echanges a caractere adulte se font entre majeurs et de maniere consentie. <strong>Toute forme de prostitution ou d'entremise remuneree est strictement interdite</strong> : il est interdit d'offrir, de solliciter ou de faciliter une relation sexuelle contre remuneration ou avantage (article 225-5 du Code penal). Le service ne facilite aucun paiement entre membres au titre d'un acte sexuel. Sont egalement interdits tout contenu impliquant un mineur (art. 227-23) et la diffusion d'images intimes d'un tiers sans son consentement (art. 226-2-1).</p>
 
       <h3>Politique de confidentialite</h3>
 
