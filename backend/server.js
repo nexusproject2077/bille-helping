@@ -31,6 +31,15 @@ const stripe = process.env.STRIPE_SECRET_KEY
   ? require("stripe")(process.env.STRIPE_SECRET_KEY)
   : null;
 
+// Calcule l'age (annees) a partir d'une date de naissance Stripe { day, month, year }.
+function ageFromDob(dob) {
+  const today = new Date();
+  let age = today.getFullYear() - dob.year;
+  const monthDiff = today.getMonth() + 1 - dob.month;
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.day)) age--;
+  return age;
+}
+
 const app = express();
 
 // Webhook Stripe : la verification de signature exige le corps BRUT, donc
@@ -51,12 +60,42 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
     const obj = event.data.object || {};
     const uid = obj.metadata && obj.metadata.uid;
     if (uid && event.type === "identity.verification_session.verified") {
-      await db.doc(`users/${uid}`).update({
-        identityVerified: true,
-        identityReviewedAt: admin.firestore.FieldValue.serverTimestamp(),
-        identityReviewedBy: "stripe-identity",
-      });
-      await notifyUser(uid, { type: "identity_verified" }).catch(() => {});
+      // Controle d'age : on relit la date de naissance verifiee par Stripe.
+      // On ne stocke JAMAIS la piece d'identite ni la date de naissance :
+      // uniquement le resultat (verifie) et l'age valide (entier).
+      let age = null;
+      try {
+        const vs = await stripe.identity.verificationSessions.retrieve(obj.id, {
+          expand: ["verified_outputs"],
+        });
+        const dob = vs.verified_outputs && vs.verified_outputs.dob;
+        if (dob && dob.year) age = ageFromDob(dob);
+      } catch (e) {
+        console.error("verified_outputs retrieve error", e);
+      }
+
+      if (age !== null && age < 18) {
+        // Mineur : refus automatique + retrait de la decouverte. Aucune DOB stockee.
+        await db.doc(`users/${uid}`).update({
+          identityVerified: false,
+          ageVerified: false,
+          underage: true,
+          "visibility.discoverable": false,
+        });
+        await notifyUser(uid, {
+          type: "identity_rejected",
+          note: "Acces reserve aux 18 ans et plus : ton compte a ete restreint.",
+        }).catch(() => {});
+      } else {
+        await db.doc(`users/${uid}`).update({
+          identityVerified: true,
+          ageVerified: age !== null,
+          ...(age !== null ? { age } : {}),
+          identityReviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+          identityReviewedBy: "stripe-identity",
+        });
+        await notifyUser(uid, { type: "identity_verified" }).catch(() => {});
+      }
     } else if (
       uid &&
       (event.type === "identity.verification_session.requires_input" ||

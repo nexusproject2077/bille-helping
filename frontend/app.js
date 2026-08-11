@@ -821,8 +821,17 @@ function sharedCount(a, b) {
   return a.filter((x) => setB.has(x)).length;
 }
 
-// Score de compatibilite (0-100) : intentions communes > interets communs,
-// bonus proximite et bonus "disponible maintenant".
+// Un profil est "solide" s'il a >= 2 photos, une bio et au moins une intention.
+// Les profils incomplets sont fortement penalises (quasi-invisibles).
+function isProfileStrong(u) {
+  const photos = Array.isArray(u.photos) ? u.photos.length : 0;
+  const hasBio = typeof u.bio === "string" && u.bio.trim().length >= 10;
+  const hasIntentions = Array.isArray(u.intentions) && u.intentions.length >= 1;
+  return photos >= 2 && hasBio && hasIntentions;
+}
+
+// Score de compatibilite : intentions communes > interets communs, bonus
+// proximite/disponibilite, GROS bonus verifie, forte penalite si incomplet.
 function compatibilityScore(me, other, distKm, maxRadiusM) {
   let score = 0;
   // Intentions communes : fort poids (jusqu'a 45)
@@ -834,6 +843,10 @@ function compatibilityScore(me, other, distKm, maxRadiusM) {
   score += Math.max(0, 15 * (1 - (distKm / maxKm)));
   // Bonus "disponible maintenant"
   if (isLookingNowActive(other)) score += 10;
+  // Confiance (levier n1) : gros bonus aux profils verifies
+  if (other.identityVerified === true) score += 35;
+  // Qualite (anti-fatigue) : forte penalite aux profils incomplets
+  if (!isProfileStrong(other)) score -= 80;
   return score;
 }
 
@@ -871,6 +884,7 @@ async function loadSwipeQueue() {
       const data = d.data();
       if (!data.location || !data.profileComplete) continue;
       if (data.visibility && data.visibility.discoverable === false) continue;
+      if (prefs.verifiedOnly && data.identityVerified !== true) continue; // filtre "verifies only"
       if (!matchesSeeking(currentProfile, data)) continue;
 
       // Filtre par tranche d'age
@@ -1740,6 +1754,7 @@ function initSearchPrefs() {
   $("pref-age-min-val").textContent = p.ageMin;
   $("pref-age-max").value = p.ageMax;
   $("pref-age-max-val").textContent = p.ageMax;
+  if ($("pref-verified-only")) $("pref-verified-only").checked = p.verifiedOnly === true;
 }
 let prefTimer = null;
 function onPrefChange() {
@@ -1753,7 +1768,8 @@ async function saveSearchPrefs() {
   const searchPrefs = {
     maxDistance: parseInt($("pref-distance").value, 10),
     ageMin: parseInt($("pref-age-min").value, 10),
-    ageMax: parseInt($("pref-age-max").value, 10)
+    ageMax: parseInt($("pref-age-max").value, 10),
+    verifiedOnly: $("pref-verified-only") ? $("pref-verified-only").checked : false
   };
   try {
     await updateDoc(doc(db, "users", currentUser.uid), { searchPrefs });
@@ -1764,6 +1780,10 @@ async function saveSearchPrefs() {
   } catch (e) { $("pref-status").textContent = "Erreur."; }
 }
 ["pref-distance", "pref-age-min", "pref-age-max"].forEach((id) => $(id).addEventListener("input", onPrefChange));
+// Le toggle "verifies uniquement" enregistre immediatement puis recharge la pile
+if ($("pref-verified-only")) {
+  $("pref-verified-only").addEventListener("change", async () => { await saveSearchPrefs(); loadSwipeQueue(); });
+}
 
 // ============================================================
 // CGU
