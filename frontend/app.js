@@ -122,6 +122,7 @@ let onbPhotos = [];           // {url, path}
 let onbInterests = [];
 let onbIntentions = [];
 let swipeQueue = [];          // profils a swiper
+let discoverMode = "foryou";  // "foryou" (compat) | "dispo" (dispo maintenant, par proximite)
 let activeChat = null;        // {matchId, otherUid, otherName}
 let chatUnsub = null;         // unsubscribe du listener chat
 let matchesUnsub = null;
@@ -889,6 +890,7 @@ async function loadSwipeQueue() {
       if (!data.location || !data.profileComplete) continue;
       if (data.visibility && data.visibility.discoverable === false) continue;
       if (prefs.verifiedOnly && data.identityVerified !== true) continue; // filtre "verifies only"
+      if (discoverMode === "dispo" && !isLookingNowActive(data)) continue; // mode Dispo : actifs seulement
       if (!matchesSeeking(currentProfile, data)) continue;
 
       // Filtre par tranche d'age
@@ -913,8 +915,11 @@ async function loadSwipeQueue() {
     } catch (_) {}
   }));
 
-  // Ceux qui m'ont super-like passent en tete, puis tri par compatibilite
-  queue.sort((a, b) => (b.superLikedMe ? 1 : 0) - (a.superLikedMe ? 1 : 0) || b.compat - a.compat);
+  // Super-likes en tete, puis : proximite en mode Dispo, compatibilite sinon.
+  queue.sort((a, b) =>
+    (b.superLikedMe ? 1 : 0) - (a.superLikedMe ? 1 : 0) ||
+    (discoverMode === "dispo" ? a.distanceKm - b.distanceKm : b.compat - a.compat)
+  );
   swipeQueue = queue;
   renderSwipeCards();
 }
@@ -924,7 +929,9 @@ function renderSwipeCards() {
   stack.innerHTML = "";
   if (swipeQueue.length === 0) {
     $("swipe-empty").classList.remove("hidden");
-    $("swipe-empty").querySelector("p").textContent = "Plus personne dans ton secteur pour l'instant.";
+    $("swipe-empty").querySelector("p").textContent = discoverMode === "dispo"
+      ? "Personne de dispo pres de toi maintenant."
+      : "Plus personne dans ton secteur pour l'instant.";
     return;
   }
   $("swipe-empty").classList.add("hidden");
@@ -1086,6 +1093,16 @@ function enableDrag(card, likeStamp, nopeStamp, superStamp) {
   card.addEventListener("touchend", onEnd);
 }
 
+// Modes de decouverte : "Pour toi" (compat) vs "Dispo pres de toi" (proximite)
+function setDiscoverMode(m) {
+  discoverMode = m;
+  $("mode-foryou").classList.toggle("active", m === "foryou");
+  $("mode-dispo").classList.toggle("active", m === "dispo");
+  loadSwipeQueue();
+}
+$("mode-foryou").addEventListener("click", () => setDiscoverMode("foryou"));
+$("mode-dispo").addEventListener("click", () => setDiscoverMode("dispo"));
+
 // Boutons like / pass / super like / rewind
 $("btn-like").addEventListener("click", () => doSwipe("like"));
 $("btn-pass").addEventListener("click", () => doSwipe("pass"));
@@ -1186,6 +1203,10 @@ function showMatchOverlay(item, matchId, isSuper) {
   $("match-text").textContent = isSuper
     ? "Super Like ! Toi et " + item.data.pseudo + " vous etes plu !"
     : "Toi et " + item.data.pseudo + " vous etes likes !";
+  // Nudge Dispo : si les deux sont dispo maintenant, on pousse a se voir vite
+  const bothDispo = isLookingNowActive(currentProfile) && isLookingNowActive(item.data);
+  const nudge = $("match-nudge");
+  if (nudge) nudge.classList.toggle("hidden", !bothDispo);
   $("match-overlay").classList.remove("hidden");
   $("btn-match-continue").onclick = () => $("match-overlay").classList.add("hidden");
   $("btn-match-message").onclick = () => {

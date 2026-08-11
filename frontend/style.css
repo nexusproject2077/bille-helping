@@ -220,6 +220,20 @@ textarea { resize: vertical; font-family: var(--font-body); }
 .swipe-area { flex: 0 0 auto; position: relative; min-height: 0; height: 60dvh; max-height: 540px; display: flex; align-items: center; justify-content: center; }
 .card-stack { position: relative; width: 100%; max-width: 360px; height: 100%; }
 #view-discover.view.active { justify-content: center; gap: 8px; }
+
+/* Modes de decouverte : "Pour toi" / "Dispo pres de toi" */
+.discover-modes {
+  display: flex; gap: 6px; width: 100%; max-width: 360px;
+  background: rgba(0,0,0,0.3); padding: 4px; border-radius: 12px; flex-shrink: 0;
+}
+.mode-btn {
+  flex: 1; padding: 9px 10px; border: none; background: transparent;
+  color: var(--text-muted); font-family: var(--font-body); font-weight: 600;
+  font-size: 0.85rem; border-radius: 9px; cursor: pointer; white-space: nowrap;
+  transition: background 0.2s, color 0.2s;
+}
+.mode-btn.active { background: var(--glass-strong); color: var(--text); }
+#mode-dispo.active { color: var(--success); }
 .swipe-card {
   position: absolute; inset: 0; border-radius: var(--radius-l); overflow: hidden;
   background: var(--bg-2); border: 1px solid var(--border);
@@ -408,6 +422,11 @@ textarea { resize: vertical; font-family: var(--font-body); }
   margin-bottom: 10px;
 }
 .match-pop p { color: var(--text-muted); margin-bottom: 24px; }
+.match-nudge {
+  color: var(--success) !important; font-weight: 600; margin: -8px 0 20px !important;
+  background: rgba(46,204,113,0.12); border: 1px solid rgba(46,204,113,0.4);
+  border-radius: var(--radius-s); padding: 10px 14px; line-height: 1.4;
+}
 .match-pop .btn { margin-bottom: 10px; width: 100%; }
 
 /* ===== Responsive ===== */

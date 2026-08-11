@@ -179,6 +179,10 @@
 
     <!-- ===== DÉCOUVRIR ===== -->
     <section id="view-discover" class="view active">
+      <div class="discover-modes">
+        <button id="mode-foryou" class="mode-btn active">Pour toi</button>
+        <button id="mode-dispo" class="mode-btn">&#9889; Dispo pres de toi</button>
+      </div>
       <div id="swipe-area" class="swipe-area">
         <div id="swipe-empty" class="swipe-empty hidden">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -525,6 +529,7 @@
     <div class="match-pop">
       <h2>C'est un match !</h2>
       <p id="match-text"></p>
+      <p id="match-nudge" class="match-nudge hidden">&#9889; Vous etes tous les deux dispo &mdash; un verre dans le coin ?</p>
       <button id="btn-match-message" class="btn btn-primary">Envoyer un message</button>
       <button id="btn-match-continue" class="btn btn-ghost">Continuer a swiper</button>
     </div>

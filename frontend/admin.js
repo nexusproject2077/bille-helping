@@ -174,7 +174,8 @@ async function openUser(uid) {
     const age = ageFromBirthdate(profile.birthdate);
     $("admin-user-meta").innerHTML =
       `<div><strong>Identité :</strong> ${profile.identityVerified ? "✓ vérifiée" : "non vérifiée"}</div>` +
-      `<div><strong>Âge :</strong> ${age || "?"}</div>` +
+      `<div><strong>Âge vérifié :</strong> ${profile.ageVerified ? "✓ oui" + (profile.age ? " (" + profile.age + " ans, Stripe)" : "") : "non"}</div>` +
+      `<div><strong>Âge (déclaré) :</strong> ${age || "?"}</div>` +
       `<div><strong>Genre :</strong> ${escapeHtml(profile.gender || "?")} · <strong>cherche :</strong> ${escapeHtml(profile.seeking || "?")}</div>` +
       `<div><strong>Bio :</strong> ${escapeHtml(profile.bio || "")}</div>` +
       `<div><strong>Intérêts :</strong> ${escapeHtml((profile.interests || []).join(", "))}</div>` +
