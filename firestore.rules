@@ -15,12 +15,14 @@ service cloud.firestore {
                     && request.resource.data.identityVerified == false;
 
       // Mise a jour de son propre profil, MAIS l'utilisateur ne peut jamais
-      // modifier lui-meme les champs sensibles pilotes par le serveur :
+      // MODIFIER lui-meme les champs sensibles pilotes par le serveur :
       //  - identityVerified (badge verifie : validation admin / KYC uniquement)
       //  - blocked (liste de blocage : geree par le backend via /api/report)
+      // On interdit uniquement le changement de ces cles (robuste aux MAJ
+      // partielles et aux documents anciens qui ne les possedent pas encore).
       allow update: if request.auth != null && request.auth.uid == userId
-                    && request.resource.data.identityVerified == resource.data.identityVerified
-                    && request.resource.data.blocked == resource.data.blocked;
+                    && !request.resource.data.diff(resource.data).affectedKeys()
+                          .hasAny(['identityVerified', 'blocked']);
       // La suppression de compte passe par le backend (Admin SDK) : interdite cote client.
       allow delete: if false;
 
@@ -45,7 +47,7 @@ service cloud.firestore {
       // ne peut pas etre modifiee (pas de detournement de conversation).
       allow update: if request.auth != null
                     && request.auth.uid in resource.data.users
-                    && request.resource.data.users == resource.data.users;
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['users']);
       allow delete: if request.auth != null
                     && request.auth.uid in resource.data.users;
 
