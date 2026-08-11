@@ -821,13 +821,17 @@ function sharedCount(a, b) {
   return a.filter((x) => setB.has(x)).length;
 }
 
-// Un profil est "solide" s'il a >= 2 photos, une bio et au moins une intention.
-// Les profils incomplets sont fortement penalises (quasi-invisibles).
-function isProfileStrong(u) {
+// Penalite PROGRESSIVE de complétude (0 = profil complet, jusqu'a ~55).
+// Chaque element manquant pese : plus un profil est incomplet, plus il coule.
+function completenessPenalty(u) {
+  let pen = 0;
   const photos = Array.isArray(u.photos) ? u.photos.length : 0;
   const hasBio = typeof u.bio === "string" && u.bio.trim().length >= 10;
   const hasIntentions = Array.isArray(u.intentions) && u.intentions.length >= 1;
-  return photos >= 2 && hasBio && hasIntentions;
+  if (photos < 2) pen += photos === 0 ? 22 : 13; // 0 photo pire qu'une seule
+  if (!hasBio) pen += 20;
+  if (!hasIntentions) pen += 13;
+  return pen; // max ~55
 }
 
 // Score de compatibilite : intentions communes > interets communs, bonus
@@ -845,8 +849,8 @@ function compatibilityScore(me, other, distKm, maxRadiusM) {
   if (isLookingNowActive(other)) score += 10;
   // Confiance (levier n1) : gros bonus aux profils verifies
   if (other.identityVerified === true) score += 35;
-  // Qualite (anti-fatigue) : forte penalite aux profils incomplets
-  if (!isProfileStrong(other)) score -= 80;
+  // Qualite (anti-fatigue) : penalite progressive selon la complétude
+  score -= completenessPenalty(other);
   return score;
 }
 

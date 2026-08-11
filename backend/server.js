@@ -74,7 +74,17 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
         console.error("verified_outputs retrieve error", e);
       }
 
-      if (age !== null && age < 18) {
+      if (age === null) {
+        // Mode STRICT : sans date de naissance verifiee, on ne valide pas.
+        await db.doc(`users/${uid}`).update({
+          identityVerified: false,
+          ageVerified: false,
+        });
+        await notifyUser(uid, {
+          type: "identity_needs_action",
+          note: "Ta date de naissance n'a pas pu etre confirmee. Relance la verification depuis ton profil.",
+        }).catch(() => {});
+      } else if (age < 18) {
         // Mineur : refus automatique + retrait de la decouverte. Aucune DOB stockee.
         await db.doc(`users/${uid}`).update({
           identityVerified: false,
@@ -87,10 +97,11 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
           note: "Acces reserve aux 18 ans et plus : ton compte a ete restreint.",
         }).catch(() => {});
       } else {
+        // Identite + age (>=18) confirmes. On ne stocke que le resultat + l'age.
         await db.doc(`users/${uid}`).update({
           identityVerified: true,
-          ageVerified: age !== null,
-          ...(age !== null ? { age } : {}),
+          ageVerified: true,
+          age,
           identityReviewedAt: admin.firestore.FieldValue.serverTimestamp(),
           identityReviewedBy: "stripe-identity",
         });
