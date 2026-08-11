@@ -31,6 +31,11 @@ const stripe = process.env.STRIPE_SECRET_KEY
   ? require("stripe")(process.env.STRIPE_SECRET_KEY)
   : null;
 
+// Controle d'age strict : si true, une verification sans date de naissance
+// (dob) ne donne PAS le badge. Defaut false (souple) pour ne pas bloquer les
+// vrais utilisateurs tant que l'acces a la dob n'est pas confirme cote Stripe.
+const STRICT_AGE = process.env.STRICT_AGE === "true";
+
 // Calcule l'age (annees) a partir d'une date de naissance Stripe { day, month, year }.
 function ageFromDob(dob) {
   const today = new Date();
@@ -74,8 +79,8 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
         console.error("verified_outputs retrieve error", e);
       }
 
-      if (age === null) {
-        // Mode STRICT : sans date de naissance verifiee, on ne valide pas.
+      if (age === null && STRICT_AGE) {
+        // STRICT : sans date de naissance verifiee, on ne valide pas.
         await db.doc(`users/${uid}`).update({
           identityVerified: false,
           ageVerified: false,
@@ -84,6 +89,16 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
           type: "identity_needs_action",
           note: "Ta date de naissance n'a pas pu etre confirmee. Relance la verification depuis ton profil.",
         }).catch(() => {});
+      } else if (age === null) {
+        // SOUPLE (defaut) : identite confirmee, age non garanti par Stripe
+        // (le 18+ reste couvert par la declaration a l'inscription).
+        await db.doc(`users/${uid}`).update({
+          identityVerified: true,
+          ageVerified: false,
+          identityReviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+          identityReviewedBy: "stripe-identity",
+        });
+        await notifyUser(uid, { type: "identity_verified" }).catch(() => {});
       } else if (age < 18) {
         // Mineur : refus automatique + retrait de la decouverte. Aucune DOB stockee.
         await db.doc(`users/${uid}`).update({
