@@ -215,8 +215,11 @@ textarea { resize: vertical; font-family: var(--font-body); }
 /* On utilise dvh (dynamic viewport height) au lieu de vh : dvh suit la
    hauteur reellement visible quand la barre d'adresse mobile apparait,
    donc la page tient sur un ecran sans defilement. */
-.swipe-area { flex: 1; position: relative; min-height: 0; display: flex; align-items: center; justify-content: center; }
-.card-stack { position: relative; width: 100%; max-width: 360px; height: 68dvh; max-height: 560px; }
+/* Hauteur definie (dvh) : la carte et les boutons forment un groupe centre,
+   les boutons restent juste sous la carte (pas colles en bas de l'ecran). */
+.swipe-area { flex: 0 0 auto; position: relative; min-height: 0; height: 60dvh; max-height: 540px; display: flex; align-items: center; justify-content: center; }
+.card-stack { position: relative; width: 100%; max-width: 360px; height: 100%; }
+#view-discover.view.active { justify-content: center; gap: 8px; }
 .swipe-card {
   position: absolute; inset: 0; border-radius: var(--radius-l); overflow: hidden;
   background: var(--bg-2); border: 1px solid var(--border);
@@ -239,6 +242,7 @@ textarea { resize: vertical; font-family: var(--font-body); }
 .swipe-card .card-chip { font-size: 0.72rem; padding: 4px 10px; border-radius: 14px; background: rgba(255,255,255,0.18); }
 .swipe-card.gone-left { transform: translateX(-150%) rotate(-18deg); opacity: 0; }
 .swipe-card.gone-right { transform: translateX(150%) rotate(18deg); opacity: 0; }
+.swipe-card.gone-up { transform: translateY(-150%) rotate(-6deg); opacity: 0; }
 
 .swipe-stamp {
   position: absolute; top: 28px; font-family: var(--font-display); font-weight: 700;
@@ -246,19 +250,35 @@ textarea { resize: vertical; font-family: var(--font-body); }
 }
 .swipe-stamp.like { left: 22px; color: var(--like); border-color: var(--like); transform: rotate(-15deg); }
 .swipe-stamp.nope { right: 22px; color: var(--pass); border-color: var(--pass); transform: rotate(15deg); }
+.swipe-stamp.super { left: 50%; transform: translateX(-50%) rotate(-8deg); color: #3aa5ff; border-color: #3aa5ff; font-size: 1.4rem; }
+
+/* Carte de quelqu'un qui m'a super-like : bordure bleue + badge etoile */
+.swipe-card.superliked { border-color: #3aa5ff; box-shadow: 0 0 0 2px #3aa5ff, var(--shadow); }
+.card-superlike-badge {
+  position: absolute; top: 16px; right: 16px; z-index: 3;
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #3aa5ff; color: #04223a; font-size: 0.72rem; font-weight: 700;
+  padding: 5px 11px; border-radius: 14px; box-shadow: 0 2px 10px rgba(58,165,255,0.55);
+}
+.card-superlike-badge svg { width: 13px; height: 13px; }
 
 .swipe-empty { text-align: center; color: var(--text-muted); }
-.swipe-actions { display: flex; justify-content: center; gap: 30px; padding: 20px 0 4px; }
+.swipe-actions { display: flex; justify-content: center; align-items: center; gap: 14px; padding: 16px 0 4px; }
 .circle-btn {
-  width: 64px; height: 64px; border-radius: 50%; border: 1px solid var(--border-strong);
-  background: var(--glass-strong); cursor: pointer;
+  width: 58px; height: 58px; border-radius: 50%; border: 1px solid var(--border-strong);
+  background: var(--glass-strong); cursor: pointer; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center; transition: all 0.2s;
 }
-.circle-btn svg { width: 28px; height: 28px; }
+.circle-btn svg { width: 26px; height: 26px; }
 .circle-btn:active { transform: scale(0.9); }
 .circle-btn.pass { color: var(--pass); }
 .circle-btn.like { color: var(--like); }
 .circle-btn:hover { border-color: currentColor; }
+/* Boutons secondaires (plus petits) : rewind, info, super like */
+.circle-btn.rewind, .circle-btn.superlike { width: 46px; height: 46px; }
+.circle-btn.rewind svg, .circle-btn.superlike svg { width: 20px; height: 20px; }
+.circle-btn.rewind { color: #ffb300; }
+.circle-btn.superlike { color: #3aa5ff; }
 
 /* ===== Messages / matchs ===== */
 .match-list { display: flex; flex-direction: column; gap: 10px; }
@@ -449,8 +469,8 @@ input, select, textarea {
   font-size: 0.62rem; font-weight: 700; min-width: 16px; height: 16px; border-radius: 8px;
   display: flex; align-items: center; justify-content: center; padding: 0 4px;
 }
-.circle-btn.info { color: var(--accent); width: 52px; height: 52px; }
-.circle-btn.info svg { width: 22px; height: 22px; }
+.circle-btn.info { color: var(--accent); width: 46px; height: 46px; }
+.circle-btn.info svg { width: 20px; height: 20px; }
 .swipe-empty svg { width: 48px; height: 48px; color: var(--text-dim); margin-bottom: 16px; }
 .empty-state svg { width: 48px; height: 48px; color: var(--text-dim); margin-bottom: 16px; }
 
@@ -490,6 +510,9 @@ input, select, textarea {
 .like-card { position: relative; aspect-ratio: 3/4; border-radius: var(--radius-m); overflow: hidden; cursor: pointer; background: var(--bg-2); }
 .like-card img { width: 100%; height: 100%; object-fit: cover; }
 .like-card .like-name { position: absolute; bottom: 0; left: 0; right: 0; padding: 16px 12px 10px; background: linear-gradient(to top, rgba(0,0,0,0.85), transparent); font-weight: 600; font-size: 0.95rem; }
+.like-card.superliked { box-shadow: 0 0 0 2px #3aa5ff; }
+.like-superstar { position: absolute; top: 8px; right: 8px; z-index: 2; width: 22px; height: 22px; color: #3aa5ff; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6)); }
+.like-superstar svg { width: 100%; height: 100%; display: block; }
 
 /* ============================================================ */
 /* MODALES                                                      */

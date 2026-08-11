@@ -48,15 +48,25 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
     return res.status(400).send(`Webhook Error: ${e.message}`);
   }
   try {
-    if (event.type === "identity.verification_session.verified") {
-      const uid = event.data.object.metadata && event.data.object.metadata.uid;
-      if (uid) {
-        await db.doc(`users/${uid}`).update({
-          identityVerified: true,
-          identityReviewedAt: admin.firestore.FieldValue.serverTimestamp(),
-          identityReviewedBy: "stripe-identity",
-        });
-      }
+    const obj = event.data.object || {};
+    const uid = obj.metadata && obj.metadata.uid;
+    if (uid && event.type === "identity.verification_session.verified") {
+      await db.doc(`users/${uid}`).update({
+        identityVerified: true,
+        identityReviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+        identityReviewedBy: "stripe-identity",
+      });
+      await notifyUser(uid, { type: "identity_verified" }).catch(() => {});
+    } else if (
+      uid &&
+      (event.type === "identity.verification_session.requires_input" ||
+        event.type === "identity.verification_session.canceled")
+    ) {
+      // Verification echouee / a refaire : on previent l'utilisateur.
+      await notifyUser(uid, {
+        type: "identity_needs_action",
+        note: "Ta verification n'a pas abouti. Tu peux la relancer depuis ton profil.",
+      }).catch(() => {});
     }
   } catch (e) {
     console.error("stripe webhook handling error", e);

@@ -523,6 +523,7 @@ const MODNOTIF_TITLES = {
   photo_removed: "Une de tes photos a ete retiree",
   identity_verified: "Ton identite a ete verifiee",
   identity_rejected: "Verification d'identite refusee",
+  identity_needs_action: "Verification d'identite a refaire",
   warning: "Avertissement de la moderation",
   info: "Message de la moderation"
 };
@@ -884,8 +885,18 @@ async function loadSwipeQueue() {
       queue.push(item);
     }
   }
-  // Tri par score de compatibilite (decroissant), la distance restant un facteur du score
-  queue.sort((a, b) => b.compat - a.compat);
+
+  // Detecte qui m'a super-like (lecture de leur swipe sur moi, autorisee par
+  // les regles) -> bordure bleue + priorite. Limite aux 30 premiers candidats.
+  await Promise.all(queue.slice(0, 30).map(async (it) => {
+    try {
+      const s = await getDoc(doc(db, "users", it.uid, "swipes", currentUser.uid));
+      it.superLikedMe = s.exists() && s.data().action === "superlike";
+    } catch (_) {}
+  }));
+
+  // Ceux qui m'ont super-like passent en tete, puis tri par compatibilite
+  queue.sort((a, b) => (b.superLikedMe ? 1 : 0) - (a.superLikedMe ? 1 : 0) || b.compat - a.compat);
   swipeQueue = queue;
   renderSwipeCards();
 }
@@ -982,21 +993,34 @@ function buildCard(item) {
     info.appendChild(chips);
   }
 
-  // Stamps LIKE / NOPE
+  // Stamps LIKE / NOPE / SUPER LIKE
   const likeStamp = document.createElement("div");
   likeStamp.className = "swipe-stamp like"; likeStamp.textContent = "LIKE";
   const nopeStamp = document.createElement("div");
   nopeStamp.className = "swipe-stamp nope"; nopeStamp.textContent = "NOPE";
+  const superStamp = document.createElement("div");
+  superStamp.className = "swipe-stamp super"; superStamp.textContent = "SUPER LIKE";
+
+  // Cette personne m'a super-like : bordure bleue + badge etoile
+  if (item.superLikedMe) {
+    card.classList.add("superliked");
+    const slBadge = document.createElement("div");
+    slBadge.className = "card-superlike-badge";
+    slBadge.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> Super Like';
+    card.appendChild(slBadge);
+  }
 
   card.appendChild(photo);
   card.appendChild(grad);
   if (dispo) card.appendChild(dispo);
   card.appendChild(likeStamp);
   card.appendChild(nopeStamp);
+  card.appendChild(superStamp);
   card.appendChild(info);
 
   // Le drag sera active uniquement sur la carte du dessus (voir renderSwipeCards)
-  card._enableDrag = () => enableDrag(card, likeStamp, nopeStamp);
+  card._enableDrag = () => enableDrag(card, likeStamp, nopeStamp, superStamp);
   return card;
 }
 
@@ -1005,74 +1029,120 @@ function formatDistance(km) {
   return "a ~" + Math.round(km) + " km";
 }
 
-// ----- Drag tactile / souris -----
-function enableDrag(card, likeStamp, nopeStamp) {
-  let startX = 0, currentX = 0, dragging = false;
+// ----- Drag tactile / souris (gauche=pass, droite=like, haut=super like) -----
+function enableDrag(card, likeStamp, nopeStamp, superStamp) {
+  let startX = 0, startY = 0, currentX = 0, currentY = 0, dragging = false;
 
-  const onStart = (x) => { dragging = true; startX = x; card.style.transition = "none"; };
-  const onMove = (x) => {
+  const onStart = (x, y) => { dragging = true; startX = x; startY = y; card.style.transition = "none"; };
+  const onMove = (x, y) => {
     if (!dragging) return;
-    currentX = x - startX;
+    currentX = x - startX; currentY = y - startY;
     const rot = currentX / 18;
-    card.style.transform = "translateX(" + currentX + "px) rotate(" + rot + "deg)";
-    likeStamp.style.opacity = currentX > 0 ? Math.min(currentX / 100, 1) : 0;
-    nopeStamp.style.opacity = currentX < 0 ? Math.min(-currentX / 100, 1) : 0;
+    card.style.transform = "translate(" + currentX + "px," + currentY + "px) rotate(" + rot + "deg)";
+    const up = currentY < 0 && Math.abs(currentY) > Math.abs(currentX);
+    if (superStamp) superStamp.style.opacity = up ? Math.min(-currentY / 120, 1) : 0;
+    likeStamp.style.opacity = (!up && currentX > 0) ? Math.min(currentX / 100, 1) : 0;
+    nopeStamp.style.opacity = (!up && currentX < 0) ? Math.min(-currentX / 100, 1) : 0;
   };
   const onEnd = () => {
     if (!dragging) return;
     dragging = false;
     card.style.transition = "transform 0.3s ease, opacity 0.3s ease";
-    if (currentX > 110) doSwipe("like");
+    const up = currentY < -120 && Math.abs(currentY) > Math.abs(currentX);
+    if (up) doSwipe("superlike");
+    else if (currentX > 110) doSwipe("like");
     else if (currentX < -110) doSwipe("pass");
     else {
       card.style.transform = "";
       likeStamp.style.opacity = 0; nopeStamp.style.opacity = 0;
+      if (superStamp) superStamp.style.opacity = 0;
     }
-    currentX = 0;
+    currentX = 0; currentY = 0;
   };
 
-  card.addEventListener("mousedown", (e) => onStart(e.clientX));
-  window.addEventListener("mousemove", (e) => onMove(e.clientX));
+  card.addEventListener("mousedown", (e) => onStart(e.clientX, e.clientY));
+  window.addEventListener("mousemove", (e) => onMove(e.clientX, e.clientY));
   window.addEventListener("mouseup", onEnd);
-  card.addEventListener("touchstart", (e) => onStart(e.touches[0].clientX), { passive: true });
-  card.addEventListener("touchmove", (e) => onMove(e.touches[0].clientX), { passive: true });
+  card.addEventListener("touchstart", (e) => onStart(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
+  card.addEventListener("touchmove", (e) => onMove(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
   card.addEventListener("touchend", onEnd);
 }
 
-// Boutons like/pass
+// Boutons like / pass / super like / rewind
 $("btn-like").addEventListener("click", () => doSwipe("like"));
 $("btn-pass").addEventListener("click", () => doSwipe("pass"));
+$("btn-superlike").addEventListener("click", () => doSwipe("superlike"));
+$("btn-rewind").addEventListener("click", rewindLastSwipe);
 
 // ----- Action de swipe -----
+const SUPERLIKE_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 1 Super Like / 24 h (gratuit)
+let lastSwipe = null; // { item, action, matchId } pour le rewind (annulation 1 niveau)
+
+function isPositive(a) { return a === "like" || a === "superlike"; }
+
 async function doSwipe(action) {
   if (swipeQueue.length === 0) return;
+
+  // Limite Super Like : 1 toutes les 24 h
+  if (action === "superlike") {
+    const last = currentProfile.lastSuperLikeAt;
+    const lastMs = last ? (last.seconds ? last.seconds * 1000 : new Date(last).getTime()) : 0;
+    if (lastMs && Date.now() - lastMs < SUPERLIKE_COOLDOWN_MS) {
+      const h = Math.ceil((SUPERLIKE_COOLDOWN_MS - (Date.now() - lastMs)) / 3600000);
+      toast("1 seul Super Like par jour. Reviens dans ~" + h + " h.");
+      return;
+    }
+  }
+
   const item = swipeQueue[0];
   const topCard = $("card-stack").querySelector('.swipe-card[data-uid="' + item.uid + '"]');
-  if (topCard) topCard.classList.add(action === "like" ? "gone-right" : "gone-left");
+  if (topCard) {
+    topCard.classList.add(action === "superlike" ? "gone-up" : action === "like" ? "gone-right" : "gone-left");
+  }
 
-  // Enregistre le swipe
+  let matchId = null;
   try {
     await setDoc(doc(db, "users", currentUser.uid, "swipes", item.uid), {
       action, target: item.uid, at: serverTimestamp()
     });
+    if (action === "superlike") {
+      await updateDoc(doc(db, "users", currentUser.uid), { lastSuperLikeAt: serverTimestamp() });
+      currentProfile.lastSuperLikeAt = { seconds: Math.floor(Date.now() / 1000) };
+    }
   } catch (e) { console.error(e); }
 
-  // Si like, verifie le match mutuel
-  if (action === "like") {
+  // Match mutuel : mon action positive + l'autre m'a deja like ou super-like
+  if (isPositive(action)) {
     try {
       const otherSwipe = await getDoc(doc(db, "users", item.uid, "swipes", currentUser.uid));
-      if (otherSwipe.exists() && otherSwipe.data().action === "like") {
-        await createMatch(item);
+      if (otherSwipe.exists() && isPositive(otherSwipe.data().action)) {
+        matchId = await createMatch(item, action === "superlike" || otherSwipe.data().action === "superlike");
       }
     } catch (e) { console.error(e); }
   }
 
+  lastSwipe = { item, action, matchId };
   swipeQueue.shift();
   setTimeout(() => renderSwipeCards(), 300);
 }
 
+// ----- Rewind : revenir sur le dernier profil swipe -----
+async function rewindLastSwipe() {
+  if (!lastSwipe) { toast("Aucun profil a restaurer."); return; }
+  const { item, matchId } = lastSwipe;
+  try {
+    await deleteDoc(doc(db, "users", currentUser.uid, "swipes", item.uid));
+    if (matchId) { try { await deleteDoc(doc(db, "matches", matchId)); } catch (_) {} }
+    swipeQueue.unshift(item);
+    $("swipe-empty").classList.add("hidden");
+    renderSwipeCards();
+    toast("Profil de " + item.data.pseudo + " restaure.");
+  } catch (e) { toast("Erreur : " + e.message); }
+  lastSwipe = null;
+}
+
 // ----- Creation d'un match -----
-async function createMatch(item) {
+async function createMatch(item, isSuper) {
   const matchId = [currentUser.uid, item.uid].sort().join("_");
   try {
     await setDoc(doc(db, "matches", matchId), {
@@ -1085,15 +1155,19 @@ async function createMatch(item) {
         [currentUser.uid]: (currentProfile.photos[0] || {}).url || "",
         [item.uid]: (item.data.photos[0] || {}).url || ""
       },
+      superLike: !!isSuper,
       createdAt: serverTimestamp(),
       lastMessage: ""
     });
-    showMatchOverlay(item, matchId);
+    showMatchOverlay(item, matchId, isSuper);
   } catch (e) { console.error("Erreur match :", e); }
+  return matchId;
 }
 
-function showMatchOverlay(item, matchId) {
-  $("match-text").textContent = "Toi et " + item.data.pseudo + " vous etes likes !";
+function showMatchOverlay(item, matchId, isSuper) {
+  $("match-text").textContent = isSuper
+    ? "Super Like ! Toi et " + item.data.pseudo + " vous etes plu !"
+    : "Toi et " + item.data.pseudo + " vous etes likes !";
   $("match-overlay").classList.remove("hidden");
   $("btn-match-continue").onclick = () => $("match-overlay").classList.add("hidden");
   $("btn-match-message").onclick = () => {
@@ -1490,8 +1564,8 @@ async function openLikes() {
           if (iSwiped.has(userDoc.id)) continue; // deja traite
           try {
             const theirSwipe = await getDoc(doc(db, "users", userDoc.id, "swipes", currentUser.uid));
-            if (theirSwipe.exists() && theirSwipe.data().action === "like") {
-              likers.push({ uid: userDoc.id, data: userDoc.data() });
+            if (theirSwipe.exists() && isPositive(theirSwipe.data().action)) {
+              likers.push({ uid: userDoc.id, data: userDoc.data(), superLike: theirSwipe.data().action === "superlike" });
             }
           } catch (e) {}
         }
@@ -1502,14 +1576,22 @@ async function openLikes() {
       $("no-likes").classList.remove("hidden");
       return;
     }
+    // Les Super Likes d'abord
+    likers.sort((a, b) => (b.superLike ? 1 : 0) - (a.superLike ? 1 : 0));
     likers.forEach((l) => {
       const card = document.createElement("div");
-      card.className = "like-card";
+      card.className = "like-card" + (l.superLike ? " superliked" : "");
       const img = document.createElement("img");
       if (l.data.photos && l.data.photos[0]) img.src = l.data.photos[0].url;
       const name = document.createElement("div");
       name.className = "like-name";
       name.textContent = l.data.pseudo + ", " + calculateAge(l.data.birthdate);
+      if (l.superLike) {
+        const star = document.createElement("div");
+        star.className = "like-superstar";
+        star.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>';
+        card.appendChild(star);
+      }
       card.appendChild(img);
       card.appendChild(name);
       // Au clic : like en retour -> match direct
