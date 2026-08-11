@@ -15,7 +15,8 @@ service cloud.firestore {
                     && request.resource.data.identityVerified == false;
 
       allow update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if request.auth != null && request.auth.uid == userId;
+      // La suppression de compte passe par le backend (Admin SDK) : interdite cote client.
+      allow delete: if false;
 
       // Sous-collection des swipes (like/pass) : prives au proprietaire,
       // MAIS lisibles par autrui uniquement pour verifier un match mutuel.
@@ -55,11 +56,9 @@ service cloud.firestore {
 
     // ===== Signalements =====
     match /reports/{reportId} {
-      // Un membre connecte peut creer un signalement (lui comme reporter)
-      allow create: if request.auth != null
-                    && request.auth.uid == request.resource.data.reporter;
-      // Personne ne peut relire/modifier les signalements cote client (moderation back-office)
-      allow read, update, delete: if false;
+      // Les signalements sont crees par le backend (Admin SDK), jamais
+      // directement par le client : tout acces cote client est interdit.
+      allow read, create, update, delete: if false;
     }
 
     // Tout le reste interdit par defaut

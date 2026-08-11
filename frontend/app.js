@@ -6,7 +6,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  signOut, onAuthStateChanged, deleteUser
+  signOut, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, updateDoc, getDoc, getDocs, deleteDoc,
@@ -30,6 +30,33 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+// ===== Backend API (Cloud Run via rewrite Firebase Hosting) =====
+// Par defaut, le frontend appelle "/api/**" en same-origin ; Firebase
+// Hosting redirige vers le service Cloud Run. Pour pointer ailleurs
+// (dev), definir window.__BILLE_API__ avant le chargement de ce script.
+const API_BASE = (typeof window !== "undefined" && window.__BILLE_API__) || "/api";
+
+// Appel authentifie au backend : joint le jeton Firebase de l'utilisateur.
+async function apiFetch(path, options = {}) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Non connecte.");
+  const token = await user.getIdToken();
+  const res = await fetch(API_BASE + path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token,
+      ...(options.headers || {})
+    }
+  });
+  if (!res.ok) {
+    let msg = "Erreur " + res.status;
+    try { const j = await res.json(); if (j && j.error) msg = j.error; } catch (_) {}
+    throw new Error(msg);
+  }
+  return res;
+}
 
 // ===== Constantes =====
 const GRID_DEGREES = 0.01;        // ~1.1 km de floutage
@@ -572,34 +599,34 @@ $("btn-geo").addEventListener("click", () => {
   }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 });
 });
 
-// ----- RGPD : export -----
-$("btn-export").addEventListener("click", () => {
-  const data = JSON.stringify(currentProfile, null, 2);
-  const blob = new Blob([data], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "mes-donnees-bille-helping.json";
-  a.click();
-  URL.revokeObjectURL(url);
+// ----- RGPD : export (genere cote backend Cloud Run) -----
+$("btn-export").addEventListener("click", async () => {
+  try {
+    toast("Preparation de tes donnees...");
+    const res = await apiFetch("/export", { method: "GET" });
+    const data = await res.text(); // deja du JSON formate cote serveur
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "mes-donnees-bille-helping.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert("Erreur lors de l'export : " + e.message);
+  }
 });
 
-// ----- RGPD : suppression complete du compte -----
+// ----- RGPD : suppression complete du compte (cote backend Cloud Run) -----
 $("btn-delete").addEventListener("click", async () => {
   if (!confirm("Supprimer definitivement ton compte et toutes tes donnees ? Cette action est irreversible.")) return;
   try {
-    // Les photos sont en base64 dans le document : le supprimer suffit.
-    await deleteDoc(doc(db, "users", currentUser.uid));
-    // Supprime le compte Auth
-    await deleteUser(currentUser);
+    // Le backend (Admin SDK) supprime le profil, les matchs/messages et le compte Auth.
+    await apiFetch("/account", { method: "DELETE" });
+    await signOut(auth);
     alert("Compte supprime. A bientot !");
   } catch (e) {
-    if (e.code === "auth/requires-recent-login") {
-      alert("Pour des raisons de securite, reconnecte-toi puis reessaie la suppression.");
-      signOut(auth);
-    } else {
-      alert("Erreur : " + e.message);
-    }
+    alert("Erreur lors de la suppression : " + e.message);
   }
 });
 
@@ -1212,21 +1239,14 @@ $("btn-confirm-report").addEventListener("click", async () => {
   const reason = document.querySelector('input[name="report-reason"]:checked');
   if (!reason) { $("report-status").textContent = "Choisis une raison."; $("report-status").className = "status error"; return; }
   try {
-    // Enregistre le signalement (illicite manifeste => traitement prioritaire DSA)
-    const illegal = ILLEGAL_REPORT_REASONS.includes(reason.value);
-    await addDoc(collection(db, "reports"), {
-      reporter: currentUser.uid,
-      reported: reportTarget.uid,
-      reason: reason.value,
-      illegal,
-      priority: illegal ? "urgent" : "normal",
-      status: "pending",
-      at: serverTimestamp()
+    // Le backend enregistre le signalement (priorisation DSA) et bloque l'utilisateur.
+    await apiFetch("/report", {
+      method: "POST",
+      body: JSON.stringify({ reported: reportTarget.uid, reason: reason.value })
     });
-    // Bloque l'utilisateur (ajoute a ma liste de bloques)
+    // Reflete le blocage dans l'etat local (filtrage cote client)
     const blocked = currentProfile.blocked || [];
     if (!blocked.includes(reportTarget.uid)) blocked.push(reportTarget.uid);
-    await updateDoc(doc(db, "users", currentUser.uid), { blocked });
     currentProfile.blocked = blocked;
 
     $("report-modal").classList.add("hidden");

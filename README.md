@@ -2,12 +2,24 @@
 
 Application web (PWA) de mise en relation entre adultes, construite avec une approche **privacy-by-design** et conforme RGPD.
 
+## Architecture
+
+L'application est separee en deux unites deployables :
+
+- **Frontend** (`frontend/`) — site statique servi par **Firebase Hosting**.
+- **Backend** (`backend/`) — API Node/Express servie par **Cloud Run**, pour
+  les operations privilegiees (export RGPD, suppression de compte, signalements)
+  via le **Firebase Admin SDK**.
+
+Firebase Hosting redirige `/api/**` vers le service Cloud Run (rewrite dans
+`firebase.json`), donc le frontend appelle le backend en same-origin.
+
 ## Stack technique
 
-- **Front** : HTML / CSS / JavaScript vanilla (modules ES)
+- **Front** : HTML / CSS / JavaScript vanilla (modules ES) — Firebase Hosting
+- **Back** : Node.js / Express + Firebase Admin SDK — Cloud Run
 - **Auth** : Firebase Authentication (e-mail / mot de passe)
 - **Base de donnees** : Cloud Firestore (region europe `eur3`)
-- **Hebergement** : Firebase Hosting
 
 ## Principes de conformite
 
@@ -31,14 +43,34 @@ Application web (PWA) de mise en relation entre adultes, construite avec une app
 
 ## Structure
 
-| Fichier | Role |
+| Chemin | Role |
 |---|---|
-| `index.html` | Structure des ecrans (auth, onboarding, app, chat, modales) |
-| `style.css` | Styles (theme sombre, liquid glass) |
-| `app.js` | Logique : auth, profil, swipe/match, chat, moderation |
+| `frontend/index.html` | Structure des ecrans (auth, onboarding, app, chat, modales) |
+| `frontend/style.css` | Styles (theme sombre, liquid glass) |
+| `frontend/app.js` | Logique client : auth, profil, swipe/match, chat, moderation |
+| `backend/server.js` | API Cloud Run : export RGPD, suppression de compte, signalements |
+| `backend/Dockerfile` | Image du service Cloud Run |
+| `firebase.json` | Config Firebase Hosting (public `frontend/`, rewrite `/api/**` → Cloud Run) |
 | `firestore.rules` | Regles de securite de la base |
 | `storage.rules` | Regles de securite du stockage |
 | `legal/` | Modeles CGU, confidentialite, moderation, registre (a valider) |
+
+## Deploiement
+
+Prerequis : `firebase-tools` et `gcloud` installes et authentifies, et un
+`.firebaserc` (copier `.firebaserc.example`, ou `firebase use bille-helping`).
+
+```bash
+# 1) Backend -> Cloud Run (serviceId/region alignes sur firebase.json)
+cd backend
+gcloud run deploy bille-backend --source . --region europe-west1 --allow-unauthenticated
+cd ..
+
+# 2) Frontend + regles -> Firebase Hosting / Firestore
+firebase deploy --only hosting,firestore:rules
+```
+
+Voir `backend/README.md` pour le detail des endpoints et le dev local.
 
 ## Securite
 
