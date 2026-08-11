@@ -25,7 +25,45 @@ const db = admin.firestore();
 // Client Google Vision (SafeSearch) — utilise les identifiants du service.
 const visionClient = new vision.ImageAnnotatorClient();
 
+// Stripe (verification d'identite) — initialise seulement si la cle est presente,
+// pour que le service demarre normalement tant que Stripe n'est pas configure.
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? require("stripe")(process.env.STRIPE_SECRET_KEY)
+  : null;
+
 const app = express();
+
+// Webhook Stripe : la verification de signature exige le corps BRUT, donc
+// cette route est declaree AVANT le parseur JSON global.
+app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  if (!stripe || !process.env.STRIPE_WEBHOOK_SECRET) return res.status(503).end();
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      req.headers["stripe-signature"],
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+  } catch (e) {
+    return res.status(400).send(`Webhook Error: ${e.message}`);
+  }
+  try {
+    if (event.type === "identity.verification_session.verified") {
+      const uid = event.data.object.metadata && event.data.object.metadata.uid;
+      if (uid) {
+        await db.doc(`users/${uid}`).update({
+          identityVerified: true,
+          identityReviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+          identityReviewedBy: "stripe-identity",
+        });
+      }
+    }
+  } catch (e) {
+    console.error("stripe webhook handling error", e);
+  }
+  res.json({ received: true });
+});
+
 // Les photos arrivent en base64 (data URI) : on releve la limite de corps.
 app.use(express.json({ limit: "8mb" }));
 
@@ -248,6 +286,31 @@ app.post("/api/photos/check", requireAuth, async (req, res) => {
     // Fail-open : si Vision est indisponible, on ne bloque pas l'upload
     // (l'admin reste le dernier recours pour retirer une photo).
     res.json({ allowed: true, error: "vision_unavailable" });
+  }
+});
+
+// ============================================================
+// POST /api/verify/start — demarre une verification d'identite Stripe Identity
+// Cree une VerificationSession et renvoie l'URL du parcours hebergé par Stripe.
+// Le resultat arrive via le webhook (identity.verification_session.verified),
+// qui met identityVerified=true. Aucune piece d'identite n'est stockee chez nous.
+// body : { returnUrl }
+// ============================================================
+app.post("/api/verify/start", requireAuth, async (req, res) => {
+  if (!stripe) {
+    return res.status(503).json({ error: "Verification d'identite non configuree." });
+  }
+  try {
+    const session = await stripe.identity.verificationSessions.create({
+      type: "document",
+      metadata: { uid: req.user.uid },
+      options: { document: { require_matching_selfie: true, require_live_capture: true } },
+      return_url: (req.body && req.body.returnUrl) || undefined,
+    });
+    res.json({ url: session.url });
+  } catch (e) {
+    console.error("verify start error", e);
+    res.status(500).json({ error: "Impossible de demarrer la verification." });
   }
 });
 

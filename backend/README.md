@@ -13,7 +13,14 @@ Cloud Run, en joignant le jeton Firebase de l'utilisateur.
 | `DELETE` | `/api/account` | Suppression complète du compte (droit à l'oubli : Firestore + Auth) |
 | `POST` | `/api/report` | Enregistrement d'un signalement (priorisé DSA) + blocage |
 | `POST` | `/api/photos/check` | Modération d'une photo de profil via Google Vision (bloque la nudité explicite) |
+| `POST` | `/api/verify/start` | Démarre une vérification d'identité Stripe Identity (renvoie l'URL du parcours) |
+| `POST` | `/api/stripe/webhook` | Reçoit le résultat Stripe et pose le badge vérifié (corps brut, signature vérifiée) |
 | `GET` | `/health` | Sonde de santé |
+
+> **Stripe Identity** : aucune pièce d'identité n'est stockée par Bille Helping.
+> Définir sur Cloud Run `STRIPE_SECRET_KEY` et `STRIPE_WEBHOOK_SECRET`, et créer un
+> webhook Stripe (événement `identity.verification_session.verified`) pointant sur
+> `https://<cloud-run-url>/api/stripe/webhook`. Sans ces clés, l'endpoint renvoie 503.
 
 > **Google Vision** : activer l'API une fois avec `gcloud services enable vision.googleapis.com`.
 > Le compte de service Cloud Run l'appelle avec ses identifiants par défaut. Seuil :

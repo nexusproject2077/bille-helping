@@ -528,6 +528,19 @@ function renderProfile() {
   $("profile-name").textContent = p.pseudo;
   $("profile-age").textContent = calculateAge(p.birthdate) + " ans";
   setVerifiedBadge(document.querySelector("#view-profile .profile-head"), p.identityVerified === true);
+  // Etat de la verification d'identite
+  const vSt = $("verify-status"), vBtn = $("btn-verify");
+  if (vSt && vBtn) {
+    if (p.identityVerified === true) {
+      vSt.textContent = "Identite verifiee ✓";
+      vSt.className = "hint success";
+      vBtn.classList.add("hidden");
+    } else {
+      vSt.textContent = "Ton identite n'est pas encore verifiee.";
+      vSt.className = "hint";
+      vBtn.classList.remove("hidden");
+    }
+  }
   $("profile-bio").textContent = p.bio || "";
 
   // Interets
@@ -653,6 +666,25 @@ $("btn-geo").addEventListener("click", () => {
       ? "Tu as refuse la localisation."
       : "Position indisponible.";
   }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 });
+});
+
+// ----- Verification d'identite (Stripe Identity via le backend) -----
+$("btn-verify").addEventListener("click", async () => {
+  const btn = $("btn-verify");
+  btn.disabled = true;
+  try {
+    const res = await apiFetch("/verify/start", {
+      method: "POST",
+      body: JSON.stringify({ returnUrl: window.location.href })
+    });
+    const { url } = await res.json();
+    if (url) window.location.href = url;
+    else toast("Verification indisponible pour le moment.");
+  } catch (e) {
+    toast("Erreur : " + e.message);
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 // ----- RGPD : export (genere cote backend Cloud Run) -----
