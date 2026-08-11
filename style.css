@@ -212,8 +212,11 @@ textarea { resize: vertical; font-family: var(--font-body); }
 .view-title { font-family: var(--font-display); font-size: 1.5rem; margin-bottom: 18px; }
 
 /* ===== Swipe ===== */
-.swipe-area { flex: 1; position: relative; min-height: 60vh; display: flex; align-items: center; justify-content: center; }
-.card-stack { position: relative; width: 100%; max-width: 360px; height: 70vh; max-height: 560px; }
+/* On utilise dvh (dynamic viewport height) au lieu de vh : dvh suit la
+   hauteur reellement visible quand la barre d'adresse mobile apparait,
+   donc la page tient sur un ecran sans defilement. */
+.swipe-area { flex: 1; position: relative; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.card-stack { position: relative; width: 100%; max-width: 360px; height: 68dvh; max-height: 560px; }
 .swipe-card {
   position: absolute; inset: 0; border-radius: var(--radius-l); overflow: hidden;
   background: var(--bg-2); border: 1px solid var(--border);
