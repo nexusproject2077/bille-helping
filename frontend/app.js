@@ -58,6 +58,23 @@ async function apiFetch(path, options = {}) {
   return res;
 }
 
+// Vérifie une photo de profil via le backend (Google Vision / SafeSearch).
+// Renvoie true si autorisée. Fail-open : si le service est indisponible,
+// on n'empêche pas l'ajout (l'admin peut toujours retirer une photo).
+async function photoAllowed(dataUrl) {
+  try {
+    const res = await apiFetch("/photos/check", {
+      method: "POST",
+      body: JSON.stringify({ image: dataUrl })
+    });
+    const j = await res.json();
+    return j.allowed !== false;
+  } catch (e) {
+    console.warn("Vérification photo indisponible :", e.message);
+    return true;
+  }
+}
+
 // ===== Badge « identite verifiee » =====
 // Rendu comme un SVG non selectionnable (impossible a copier-coller comme
 // texte) et pilote UNIQUEMENT par le champ serveur identityVerified : un
@@ -336,14 +353,17 @@ $("photo-input").addEventListener("change", async (e) => {
   photoStatus("Traitement de la photo...", "");
   try {
     // Compression : max 800px, qualite 0.7 -> reste leger pour Firestore
-    const dataUrl = await compressImage(file, 800, 0.7);
+    let dataUrl = await compressImage(file, 800, 0.7);
     // Securite : Firestore limite un document a 1 Mo. On verifie la taille.
-    if (dataUrl.length > 900000) {
-      const smaller = await compressImage(file, 600, 0.6);
-      onbPhotos.push({ url: smaller });
-    } else {
-      onbPhotos.push({ url: dataUrl });
+    if (dataUrl.length > 900000) dataUrl = await compressImage(file, 600, 0.6);
+    // Moderation : nudite explicite refusee sur les photos de profil
+    photoStatus("Verification de la photo...", "");
+    if (!(await photoAllowed(dataUrl))) {
+      photoStatus("Photo refusee : contenu explicite detecte. Choisis une photo non explicite.", "error");
+      $("photo-input").value = "";
+      return;
     }
+    onbPhotos.push({ url: dataUrl });
     renderOnbPhotos();
     photoStatus("", "");
   } catch (err) {
@@ -1482,6 +1502,12 @@ $("edit-photo-input").addEventListener("change", async (e) => {
   try {
     let dataUrl = await compressImage(file, 800, 0.7);
     if (dataUrl.length > 900000) dataUrl = await compressImage(file, 600, 0.6);
+    $("edit-photo-status").textContent = "Verification...";
+    if (!(await photoAllowed(dataUrl))) {
+      $("edit-photo-status").textContent = "Photo refusee : contenu explicite detecte.";
+      $("edit-photo-input").value = "";
+      return;
+    }
     editPhotos.push({ url: dataUrl });
     renderEditPhotos();
     $("edit-photo-status").textContent = "";

@@ -14,6 +14,7 @@
 const express = require("express");
 const cors = require("cors");
 const admin = require("firebase-admin");
+const vision = require("@google-cloud/vision");
 
 // Sur Cloud Run, les identifiants proviennent du compte de service
 // du service (Application Default Credentials). En local, definir
@@ -21,8 +22,12 @@ const admin = require("firebase-admin");
 admin.initializeApp();
 const db = admin.firestore();
 
+// Client Google Vision (SafeSearch) — utilise les identifiants du service.
+const visionClient = new vision.ImageAnnotatorClient();
+
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+// Les photos arrivent en base64 (data URI) : on releve la limite de corps.
+app.use(express.json({ limit: "8mb" }));
 
 // CORS : par defaut on autorise l'origine du site (Firebase Hosting).
 // En production, le frontend appelle "/api/**" en same-origin via le
@@ -215,6 +220,34 @@ app.post("/api/report", requireAuth, async (req, res) => {
   } catch (e) {
     console.error("report error", e);
     res.status(500).json({ error: "Echec de l'enregistrement du signalement." });
+  }
+});
+
+// ============================================================
+// POST /api/photos/check — moderation d'une photo de profil (Google Vision)
+// Bloque la nudite explicite (SafeSearch "adult" LIKELY/VERY_LIKELY). Le
+// contenu suggestif (racy) reste autorise. Ne s'applique PAS au chat.
+// body : { image: "data:image/...;base64,..." }  ->  { allowed, adult, racy }
+// ============================================================
+const BLOCK_LEVELS = ["LIKELY", "VERY_LIKELY"];
+app.post("/api/photos/check", requireAuth, async (req, res) => {
+  const image = req.body && req.body.image;
+  if (typeof image !== "string" || !image) {
+    return res.status(400).json({ error: "Image manquante." });
+  }
+  const base64 = image.includes(",") ? image.split(",")[1] : image;
+  try {
+    const [result] = await visionClient.safeSearchDetection({ image: { content: base64 } });
+    const s = result.safeSearchAnnotation || {};
+    const adult = s.adult || "UNKNOWN";
+    const racy = s.racy || "UNKNOWN";
+    const allowed = !BLOCK_LEVELS.includes(adult);
+    res.json({ allowed, adult, racy, reason: allowed ? null : "nudite" });
+  } catch (e) {
+    console.error("vision check error", e);
+    // Fail-open : si Vision est indisponible, on ne bloque pas l'upload
+    // (l'admin reste le dernier recours pour retirer une photo).
+    res.json({ allowed: true, error: "vision_unavailable" });
   }
 });
 

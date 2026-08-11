@@ -12,7 +12,12 @@ Cloud Run, en joignant le jeton Firebase de l'utilisateur.
 | `GET` | `/api/export` | Export RGPD des données de l'utilisateur (profil, swipes, matchs, messages) |
 | `DELETE` | `/api/account` | Suppression complète du compte (droit à l'oubli : Firestore + Auth) |
 | `POST` | `/api/report` | Enregistrement d'un signalement (priorisé DSA) + blocage |
+| `POST` | `/api/photos/check` | Modération d'une photo de profil via Google Vision (bloque la nudité explicite) |
 | `GET` | `/health` | Sonde de santé |
+
+> **Google Vision** : activer l'API une fois avec `gcloud services enable vision.googleapis.com`.
+> Le compte de service Cloud Run l'appelle avec ses identifiants par défaut. Seuil :
+> `adult` = LIKELY/VERY_LIKELY est bloqué ; `racy` (suggestif) reste autorisé. Le chat n'est pas filtré.
 
 ### Modération (réservé aux admins)
 
