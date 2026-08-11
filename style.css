@@ -561,6 +561,25 @@ input, select, textarea {
 .chat-placeholder p:first-of-type { font-family: var(--font-display); font-size: 1.2rem; color: var(--text); }
 
 /* ============================================================ */
+/* CENTRAGE PROPRE (tous les appareils)                         */
+/* Etat vide « Decouvrir » + en-tete du profil bien centres.    */
+/* ============================================================ */
+/* L'etat vide se centre dans toute la zone de swipe */
+.swipe-empty {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 24px;
+}
+
+/* En-tete de profil centre pour un rendu epure et premium */
+#view-profile .view-title { text-align: center; }
+.profile-photos { justify-content: center; }
+.profile-head { justify-content: center; }
+.profile-bio { text-align: center; }
+.profile-interests { justify-content: center; }
+#btn-edit-profile { margin-left: auto; margin-right: auto; }
+
+/* ============================================================ */
 /* GRAND ECRAN / PC — mise en page responsive                   */
 /* Sur tablette large et ordinateur, on quitte la colonne       */
 /* mobile centree pour une vraie interface multi-colonnes.      */
@@ -643,16 +662,20 @@ input, select, textarea {
     box-shadow: inset 3px 0 0 var(--primary);
   }
 
-  /* ---- Profil / Parametres : cartes reparties en colonnes ---- */
-  #view-profile.view.active { max-width: 940px; margin: 0 auto; width: 100%; }
-  .profile-settings { column-count: 2; column-gap: 18px; }
+  /* ---- Profil / Parametres : colonne centree, cartes en colonnes ---- */
+  /* display:block (et non flex) : evite que les photos soient ecrasees */
+  #view-profile.view.active {
+    display: block; max-width: 940px; margin: 0 auto; width: 100%;
+    padding: 32px 32px 48px;
+  }
+  .profile-settings { column-count: 2; column-gap: 18px; margin-top: 26px; }
   .profile-settings .profile-section,
   .profile-settings .visibility-section {
     break-inside: avoid; -webkit-column-break-inside: avoid;
     display: inline-block; width: 100%;
   }
-  .profile-photos img { width: 130px; height: 172px; }
-  #btn-edit-profile { max-width: 320px; }
+  .profile-photos img { width: 132px; height: 176px; }
+  #btn-edit-profile { max-width: 340px; }
 
   /* ---- Panneaux plein ecran recentres facon boite de dialogue ---- */
   .detail-panel, .likes-panel, .cgu-panel {
