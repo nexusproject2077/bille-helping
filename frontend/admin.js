@@ -198,13 +198,18 @@ function renderUserPhotos(uid, photos) {
     del.title = "Supprimer cette photo";
     del.addEventListener("click", async () => {
       if (!confirm("Supprimer cette photo ?")) return;
+      const reason = prompt(
+        "Motif (envoyé à l'utilisateur) : contenu-explicite, photo-non-conforme, faux-profil, autre",
+        "photo-non-conforme"
+      );
+      if (reason === null) return;
       try {
         const { photos: updated } = await apiFetch("/admin/users/" + uid + "/photos/delete", {
           method: "POST",
-          body: JSON.stringify({ index: i })
+          body: JSON.stringify({ index: i, reason })
         });
         renderUserPhotos(uid, updated);
-        toast("Photo supprimée.");
+        toast("Photo supprimée, utilisateur notifié.");
       } catch (e) { toast("Erreur : " + e.message); }
     });
     cell.appendChild(img);
@@ -220,16 +225,39 @@ $("admin-verify").addEventListener("click", () => setVerify(true));
 $("admin-unverify").addEventListener("click", () => setVerify(false));
 async function setVerify(verified) {
   if (!currentUserUid) return;
+  let note = null;
+  if (!verified) {
+    note = prompt("Raison du refus (envoyée à l'utilisateur, facultatif) :", "");
+    if (note === null) return; // annulé
+  }
   try {
     await apiFetch("/admin/users/" + currentUserUid + "/verify", {
       method: "PATCH",
-      body: JSON.stringify({ verified })
+      body: JSON.stringify({ verified, note: note || null })
     });
-    toast(verified ? "Identité validée." : "Validation retirée.");
+    toast(verified ? "Identité validée, utilisateur notifié." : "Identité refusée, utilisateur notifié.");
     openUser(currentUserUid);
     loadUsers();
   } catch (e) { $("admin-user-status").textContent = "Erreur : " + e.message; }
 }
+
+$("admin-warn").addEventListener("click", async () => {
+  if (!currentUserUid) return;
+  const reason = prompt(
+    "Motif : harcelement, propos-haineux, faux-profil, prostitution, autre",
+    "autre"
+  );
+  if (reason === null) return;
+  const note = prompt("Message à l'utilisateur (facultatif) :", "");
+  if (note === null) return;
+  try {
+    await apiFetch("/admin/users/" + currentUserUid + "/notify", {
+      method: "POST",
+      body: JSON.stringify({ type: "warning", reason, note: note || null })
+    });
+    toast("Avertissement envoyé à l'utilisateur.");
+  } catch (e) { $("admin-user-status").textContent = "Erreur : " + e.message; }
+});
 
 $("admin-delete-user").addEventListener("click", async () => {
   if (!currentUserUid) return;

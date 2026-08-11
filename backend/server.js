@@ -100,6 +100,21 @@ const ILLEGAL_REPORT_REASONS = [
 ];
 
 // ============================================================
+// Notification de moderation adressee a un utilisateur (boite in-app).
+// Ecrite par le backend (Admin SDK) ; l'utilisateur peut seulement lire /
+// marquer comme lue (voir regles Firestore).
+// ============================================================
+async function notifyUser(uid, { type, reason, note }) {
+  await db.collection(`users/${uid}/notifications`).add({
+    type: type || "info",
+    reason: reason || null,
+    note: note || null,
+    read: false,
+    at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+// ============================================================
 // Suppression complete d'un utilisateur (droit a l'oubli / moderation)
 // Nettoie : matchs + messages, ses swipes envoyes, les swipes RECUS
 // (les like/pass des autres qui le ciblent), le document, le compte Auth.
@@ -378,12 +393,18 @@ app.delete("/api/admin/users/:uid", requireAuth, requireAdmin, async (req, res) 
 // Validation / refus de l'identite d'un compte (pilote le badge verifie)
 app.patch("/api/admin/users/:uid/verify", requireAuth, requireAdmin, async (req, res) => {
   const verified = req.body && req.body.verified === true;
+  const note = req.body && req.body.note;
   try {
     await db.doc(`users/${req.params.uid}`).update({
       identityVerified: verified,
       identityReviewedAt: admin.firestore.FieldValue.serverTimestamp(),
       identityReviewedBy: req.user.uid,
     });
+    // Previent l'utilisateur du resultat
+    await notifyUser(req.params.uid, {
+      type: verified ? "identity_verified" : "identity_rejected",
+      note: note || null,
+    }).catch(() => {});
     res.json({ ok: true, identityVerified: verified });
   } catch (e) {
     console.error("admin verify error", e);
@@ -404,10 +425,28 @@ app.post("/api/admin/users/:uid/photos/delete", requireAuth, requireAdmin, async
     }
     photos.splice(index, 1);
     await ref.update({ photos });
+    // Previent l'utilisateur du retrait de sa photo (avec raison eventuelle)
+    await notifyUser(req.params.uid, {
+      type: "photo_removed",
+      reason: (req.body && req.body.reason) || null,
+      note: (req.body && req.body.note) || null,
+    }).catch(() => {});
     res.json({ ok: true, photos });
   } catch (e) {
     console.error("admin delete photo error", e);
     res.status(500).json({ error: "Echec de la suppression de la photo." });
+  }
+});
+
+// Envoi d'un message de moderation (avertissement) a un utilisateur
+app.post("/api/admin/users/:uid/notify", requireAuth, requireAdmin, async (req, res) => {
+  const { type, reason, note } = req.body || {};
+  try {
+    await notifyUser(req.params.uid, { type: type || "warning", reason, note });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("admin notify error", e);
+    res.status(500).json({ error: "Echec de l'envoi du message." });
   }
 });
 

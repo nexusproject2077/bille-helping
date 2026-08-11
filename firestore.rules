@@ -34,6 +34,15 @@ service cloud.firestore {
         // Autrui peut lire UNIQUEMENT le swipe qui le concerne (pour detecter le match)
         allow read: if request.auth != null && request.auth.uid == targetId;
       }
+
+      // Notifications de moderation : ecrites par le backend (Admin SDK).
+      // Le proprietaire peut les lire et seulement basculer le champ "read".
+      match /notifications/{notifId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow update: if request.auth != null && request.auth.uid == userId
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow create, delete: if false;
+      }
     }
 
     // ===== Matchs =====

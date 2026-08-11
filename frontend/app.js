@@ -484,6 +484,7 @@ document.querySelectorAll(".nav-btn").forEach((btn) => {
 function enterApp() {
   showScreen("app");
   startMatchesListener();  // ecoute globale pour les badges de notification
+  startModnotifListener(); // boite "Moderation" (messages automatiques)
   switchView("discover");
   revealAdminIfNeeded();   // affiche l'entree "Espace moderation" pour les admins
 }
@@ -511,6 +512,86 @@ function startMatchesListener() {
     snap.forEach((d) => listenUnread(d.id));
   });
 }
+
+// ============================================================
+// MESSAGES DE LA MODERATION (boite in-app)
+// ============================================================
+let modnotifUnsub = null;
+let modnotifItems = [];
+
+const MODNOTIF_TITLES = {
+  photo_removed: "Une de tes photos a ete retiree",
+  identity_verified: "Ton identite a ete verifiee",
+  identity_rejected: "Verification d'identite refusee",
+  warning: "Avertissement de la moderation",
+  info: "Message de la moderation"
+};
+const MODNOTIF_REASONS = {
+  "contenu-explicite": "Contenu explicite",
+  "photo-non-conforme": "Photo non conforme",
+  "faux-profil": "Faux profil",
+  "harcelement": "Harcelement",
+  "propos-haineux": "Propos haineux",
+  "prostitution": "Sollicitation payante",
+  "autre": "Autre"
+};
+
+function startModnotifListener() {
+  if (modnotifUnsub) modnotifUnsub();
+  const q = query(collection(db, "users", currentUser.uid, "notifications"), orderBy("at", "desc"));
+  modnotifUnsub = onSnapshot(q, (snap) => {
+    modnotifItems = [];
+    snap.forEach((d) => modnotifItems.push({ id: d.id, ...d.data() }));
+    const unread = modnotifItems.filter((n) => !n.read).length;
+    const badge = $("modnotif-badge");
+    if (unread > 0) { badge.textContent = unread > 9 ? "9+" : unread; badge.classList.remove("hidden"); }
+    else badge.classList.add("hidden");
+    if (!$("modnotif-panel").classList.contains("hidden")) renderModnotif();
+  }, (err) => console.warn("modnotif:", err.message));
+}
+
+function renderModnotif() {
+  const list = $("modnotif-list");
+  list.innerHTML = "";
+  if (!modnotifItems.length) { $("no-modnotif").classList.remove("hidden"); return; }
+  $("no-modnotif").classList.add("hidden");
+  modnotifItems.forEach((n) => {
+    const card = document.createElement("div");
+    card.className = "modnotif-item" + (n.read ? "" : " unread");
+    const title = document.createElement("div");
+    title.className = "modnotif-title";
+    title.textContent = MODNOTIF_TITLES[n.type] || MODNOTIF_TITLES.info;
+    card.appendChild(title);
+    if (n.reason) {
+      const r = document.createElement("div");
+      r.className = "modnotif-reason";
+      r.textContent = "Motif : " + (MODNOTIF_REASONS[n.reason] || n.reason);
+      card.appendChild(r);
+    }
+    if (n.note) {
+      const note = document.createElement("div");
+      note.className = "modnotif-note";
+      note.textContent = n.note;
+      card.appendChild(note);
+    }
+    if (n.at && n.at.toDate) {
+      const t = document.createElement("div");
+      t.className = "modnotif-date";
+      t.textContent = n.at.toDate().toLocaleString("fr-FR");
+      card.appendChild(t);
+    }
+    list.appendChild(card);
+  });
+}
+
+$("btn-open-modnotif").addEventListener("click", async () => {
+  $("modnotif-panel").classList.remove("hidden");
+  renderModnotif();
+  for (const n of modnotifItems.filter((x) => !x.read)) {
+    try { await updateDoc(doc(db, "users", currentUser.uid, "notifications", n.id), { read: true }); } catch (_) {}
+  }
+});
+$("btn-modnotif-close").addEventListener("click", () => $("modnotif-panel").classList.add("hidden"));
 
 // ============================================================
 // PROFIL : affichage + visibilite + RGPD
