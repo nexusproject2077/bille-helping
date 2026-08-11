@@ -912,9 +912,39 @@ function showMatchOverlay(item, matchId) {
 
 let listDisplayUnsub = null;
 
+// ------------------------------------------------------------
+// Mise en page responsive : sur grand ecran (PC), le panneau de
+// discussion vit dans le volet droit de la vue Messages (2 colonnes) ;
+// sur mobile il reste un panneau plein ecran attache au <body>.
+// ------------------------------------------------------------
+const desktopMQ = window.matchMedia("(min-width: 900px)");
+function applyResponsiveLayout() {
+  const pane = $("messages-chat-pane");
+  const chat = $("chat-panel");
+  if (!pane || !chat) return;
+  if (desktopMQ.matches) {
+    if (chat.parentElement !== pane) pane.appendChild(chat);
+  } else if (chat.parentElement !== document.body) {
+    document.body.appendChild(chat);
+  }
+}
+desktopMQ.addEventListener("change", applyResponsiveLayout);
+applyResponsiveLayout();
+
+// Met en avant la conversation ouverte dans la liste (utile en 2 colonnes)
+function setActiveRow(matchId) {
+  document.querySelectorAll(".match-row").forEach((r) => {
+    r.classList.toggle("active", !!matchId && r.dataset.matchId === matchId);
+  });
+}
+
 // Charge la liste des matchs (temps reel) pour l'affichage
 function loadMatches() {
+  // On (re)entre dans Messages : on repart de la liste (placeholder a droite sur PC)
   $("chat-panel").classList.add("hidden");
+  if (chatUnsub) { chatUnsub(); chatUnsub = null; }
+  activeChat = null;
+  setActiveRow(null);
   if (listDisplayUnsub) listDisplayUnsub();
 
   const q = query(
@@ -946,6 +976,9 @@ function loadMatches() {
 
       const row = document.createElement("div");
       row.className = "match-row";
+      row.dataset.matchId = m.id;
+      // Conserve la mise en avant si cette conversation est deja ouverte
+      if (activeChat && activeChat.matchId === m.id) row.classList.add("active");
 
       const avatar = document.createElement("img");
       avatar.className = "match-avatar";
@@ -1027,6 +1060,7 @@ function openChat(matchId, otherUid, otherName) {
   $("chat-with").textContent = otherName;
   $("chat-messages").innerHTML = "";
   $("chat-panel").classList.remove("hidden");
+  setActiveRow(matchId);
 
   if (chatUnsub) chatUnsub();
   const q = query(
@@ -1086,6 +1120,7 @@ $("btn-back-messages").addEventListener("click", () => {
   $("chat-panel").classList.add("hidden");
   if (chatUnsub) { chatUnsub(); chatUnsub = null; }
   activeChat = null;
+  setActiveRow(null);
 });
 
 // Envoi d'un message
