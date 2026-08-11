@@ -14,8 +14,38 @@ Cloud Run, en joignant le jeton Firebase de l'utilisateur.
 | `POST` | `/api/report` | Enregistrement d'un signalement (priorisé DSA) + blocage |
 | `GET` | `/health` | Sonde de santé |
 
+### Modération (réservé aux admins)
+
+Ces routes exigent un compte avec le **custom claim `admin: true`** (revérifié côté serveur) :
+
+| Méthode | Route | Rôle |
+|---|---|---|
+| `GET` | `/api/admin/users` | Liste des comptes inscrits (résumé) |
+| `GET` | `/api/admin/users/:uid` | Détail d'un compte (profil, e-mail, photos) |
+| `DELETE` | `/api/admin/users/:uid` | Suppression + nettoyage complet (matchs, messages, likes envoyés **et reçus**) |
+| `PATCH` | `/api/admin/users/:uid/verify` | Valide/retire l'identité (`{ verified: true|false }`) → pilote le badge |
+| `POST` | `/api/admin/users/:uid/photos/delete` | Supprime une photo précise (`{ index }`) |
+| `GET` | `/api/admin/reports` | Liste des signalements (urgents en premier) |
+
+Le panel d'administration est servi par le frontend sur **`/admin.html`**.
+
 Toutes les routes `/api/*` exigent le header `Authorization: Bearer <idToken>`
 (jeton Firebase), vérifié via l'Admin SDK.
+
+### Donner le rôle admin à un compte
+
+Le rôle admin est un *custom claim* sur le compte Firebase. Depuis **Cloud Shell**
+(ou en local avec `GOOGLE_APPLICATION_CREDENTIALS` défini), après que le compte
+s'est déjà inscrit dans l'app :
+
+```bash
+cd backend
+npm install
+node scripts/set-admin.js merickoken54@gmail.com
+```
+
+L'utilisateur doit se **reconnecter** pour que le claim prenne effet, puis
+`Profil → Espace modération` apparaît (et `/admin.html` devient accessible).
 
 ## Développement local
 

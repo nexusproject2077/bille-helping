@@ -58,6 +58,28 @@ async function apiFetch(path, options = {}) {
   return res;
 }
 
+// ===== Badge « identite verifiee » =====
+// Rendu comme un SVG non selectionnable (impossible a copier-coller comme
+// texte) et pilote UNIQUEMENT par le champ serveur identityVerified : un
+// utilisateur ne peut pas se l'attribuer lui-meme (regles Firestore + backend).
+function verifiedBadge() {
+  const span = document.createElement("span");
+  span.className = "verified-badge";
+  span.title = "Identite verifiee";
+  span.setAttribute("aria-label", "Identite verifiee");
+  span.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
+    '<path d="M12 1.8l2.6 1.9 3.2.3 1 3 2.5 2-1.1 3 1.1 3-2.5 2-1 3-3.2.3L12 22.2 9.4 20.3l-3.2-.3-1-3-2.5-2 1.1-3-1.1-3 2.5-2 1-3 3.2-.3z"/>' +
+    '<path d="M8.6 12.3l2.2 2.2 4.4-4.7" fill="none" stroke="#04222a" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>' +
+    "</svg>";
+  return span;
+}
+function setVerifiedBadge(headEl, isVerified) {
+  if (!headEl) return;
+  headEl.querySelectorAll(".verified-badge").forEach((b) => b.remove());
+  if (isVerified) headEl.appendChild(verifiedBadge());
+}
+
 // ===== Constantes =====
 const GRID_DEGREES = 0.01;        // ~1.1 km de floutage
 const SEARCH_RADIUS_M = 50000;    // 50 km
@@ -443,6 +465,19 @@ function enterApp() {
   showScreen("app");
   startMatchesListener();  // ecoute globale pour les badges de notification
   switchView("discover");
+  revealAdminIfNeeded();   // affiche l'entree "Espace moderation" pour les admins
+}
+
+// Affiche le lien vers le panel admin uniquement si le compte a le claim admin.
+async function revealAdminIfNeeded() {
+  const link = $("admin-link");
+  if (!link || !auth.currentUser) return;
+  try {
+    const res = await auth.currentUser.getIdTokenResult();
+    link.classList.toggle("hidden", res.claims.admin !== true);
+  } catch (_) {
+    link.classList.add("hidden");
+  }
 }
 
 // Ecoute permanente des matchs pour alimenter les pastilles meme hors onglet Messages
@@ -472,6 +507,7 @@ function renderProfile() {
   });
   $("profile-name").textContent = p.pseudo;
   $("profile-age").textContent = calculateAge(p.birthdate) + " ans";
+  setVerifiedBadge(document.querySelector("#view-profile .profile-head"), p.identityVerified === true);
   $("profile-bio").textContent = p.bio || "";
 
   // Interets
@@ -772,6 +808,7 @@ function buildCard(item) {
   const name = document.createElement("div");
   name.className = "card-name";
   name.textContent = d.pseudo + (v.age !== false ? ", " + calculateAge(d.birthdate) : "");
+  if (d.identityVerified === true) name.appendChild(verifiedBadge());
   info.appendChild(name);
 
   const meta = document.createElement("div");
@@ -883,7 +920,7 @@ async function doSwipe(action) {
   // Enregistre le swipe
   try {
     await setDoc(doc(db, "users", currentUser.uid, "swipes", item.uid), {
-      action, at: serverTimestamp()
+      action, target: item.uid, at: serverTimestamp()
     });
   } catch (e) { console.error(e); }
 
@@ -1189,6 +1226,7 @@ function openDetail(item) {
     gallery.appendChild(img);
   });
   $("detail-name").textContent = d.pseudo;
+  setVerifiedBadge(document.querySelector("#detail-panel .detail-head"), d.identityVerified === true);
   $("detail-age").textContent = (v.age !== false) ? calculateAge(d.birthdate) + " ans" : "";
   $("detail-distance").textContent = (v.distance !== false) ? formatDistance(item.distanceKm) : "";
   $("detail-bio").textContent = (v.bio !== false) ? (d.bio || "") : "";
@@ -1343,7 +1381,7 @@ async function openLikes() {
       card.appendChild(name);
       // Au clic : like en retour -> match direct
       card.addEventListener("click", async () => {
-        await setDoc(doc(db, "users", currentUser.uid, "swipes", l.uid), { action: "like", at: serverTimestamp() });
+        await setDoc(doc(db, "users", currentUser.uid, "swipes", l.uid), { action: "like", target: l.uid, at: serverTimestamp() });
         const dist = currentProfile.location
           ? distanceBetween([l.data.location.lat, l.data.location.lng], [currentProfile.location.lat, currentProfile.location.lng])
           : 0;

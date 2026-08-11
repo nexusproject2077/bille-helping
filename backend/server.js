@@ -57,6 +57,42 @@ const ILLEGAL_REPORT_REASONS = [
 ];
 
 // ============================================================
+// Suppression complete d'un utilisateur (droit a l'oubli / moderation)
+// Nettoie : matchs + messages, ses swipes envoyes, les swipes RECUS
+// (les like/pass des autres qui le ciblent), le document, le compte Auth.
+// ============================================================
+async function deleteUserCompletely(uid) {
+  // 1) Matchs de l'utilisateur (et leurs messages)
+  const matchesSnap = await db
+    .collection("matches")
+    .where("users", "array-contains", uid)
+    .get();
+  for (const m of matchesSnap.docs) {
+    await db.recursiveDelete(m.ref);
+  }
+
+  // 2) Likes/pass RECUS : swipes des autres utilisateurs qui ciblent cet uid.
+  //    (Le champ `target` est ecrit cote client pour permettre cette requete.)
+  const receivedSnap = await db
+    .collectionGroup("swipes")
+    .where("target", "==", uid)
+    .get();
+  for (const s of receivedSnap.docs) {
+    await s.ref.delete();
+  }
+
+  // 3) Document utilisateur + sa sous-collection swipes (likes ENVOYES).
+  //    Les photos sont en base64 dans le document : rien d'autre a nettoyer.
+  await db.recursiveDelete(db.doc(`users/${uid}`));
+
+  // 4) Compte Auth
+  await admin.auth().deleteUser(uid).catch((e) => {
+    // Si le compte Auth n'existe deja plus, on ignore.
+    if (e.code !== "auth/user-not-found") throw e;
+  });
+}
+
+// ============================================================
 // Sante
 // ============================================================
 function health(_req, res) {
@@ -81,6 +117,14 @@ async function requireAuth(req, res, next) {
   } catch (e) {
     return res.status(401).json({ error: "Jeton d'authentification invalide." });
   }
+}
+
+// Reserve aux administrateurs (custom claim { admin: true } sur le compte Firebase).
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.admin !== true) {
+    return res.status(403).json({ error: "Acces reserve aux administrateurs." });
+  }
+  next();
 }
 
 // ============================================================
@@ -126,24 +170,8 @@ app.get("/api/export", requireAuth, async (req, res) => {
 // DELETE /api/account — suppression complete (droit a l'oubli)
 // ============================================================
 app.delete("/api/account", requireAuth, async (req, res) => {
-  const uid = req.user.uid;
   try {
-    // 1) Supprime les matchs de l'utilisateur (et leurs messages)
-    const matchesSnap = await db
-      .collection("matches")
-      .where("users", "array-contains", uid)
-      .get();
-    for (const m of matchesSnap.docs) {
-      await db.recursiveDelete(m.ref);
-    }
-
-    // 2) Supprime le document utilisateur + sa sous-collection swipes
-    //    (les photos sont stockees en base64 dans le document : rien d'autre a nettoyer)
-    await db.recursiveDelete(db.doc(`users/${uid}`));
-
-    // 3) Supprime le compte Auth
-    await admin.auth().deleteUser(uid);
-
+    await deleteUserCompletely(req.user.uid);
     res.json({ deleted: true });
   } catch (e) {
     console.error("delete account error", e);
@@ -187,6 +215,129 @@ app.post("/api/report", requireAuth, async (req, res) => {
   } catch (e) {
     console.error("report error", e);
     res.status(500).json({ error: "Echec de l'enregistrement du signalement." });
+  }
+});
+
+// ============================================================
+// ADMIN — moderation (reserve aux comptes admin)
+// ============================================================
+
+// Liste des comptes inscrits (resume)
+app.get("/api/admin/users", requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const snap = await db.collection("users").orderBy("createdAt", "desc").limit(500).get();
+    const users = snap.docs.map((d) => {
+      const u = d.data();
+      return {
+        uid: d.id,
+        pseudo: u.pseudo || "",
+        gender: u.gender || "",
+        seeking: u.seeking || "",
+        birthdate: u.birthdate || null,
+        photosCount: Array.isArray(u.photos) ? u.photos.length : 0,
+        photo: Array.isArray(u.photos) && u.photos[0] ? u.photos[0].url : null,
+        identityVerified: u.identityVerified === true,
+        profileComplete: u.profileComplete === true,
+        lookingNow: u.lookingNow === true,
+        blockedCount: Array.isArray(u.blocked) ? u.blocked.length : 0,
+        createdAt: u.createdAt && u.createdAt.toDate ? u.createdAt.toDate().toISOString() : null,
+      };
+    });
+    res.json({ users });
+  } catch (e) {
+    console.error("admin list users error", e);
+    res.status(500).json({ error: "Echec du chargement des comptes." });
+  }
+});
+
+// Detail complet d'un compte (profil + email + photos)
+app.get("/api/admin/users/:uid", requireAuth, requireAdmin, async (req, res) => {
+  const uid = req.params.uid;
+  try {
+    const doc = await db.doc(`users/${uid}`).get();
+    if (!doc.exists) return res.status(404).json({ error: "Compte introuvable." });
+    let email = null;
+    try {
+      const authUser = await admin.auth().getUser(uid);
+      email = authUser.email || null;
+    } catch (_) {}
+    res.json({ uid, email, profile: doc.data() });
+  } catch (e) {
+    console.error("admin get user error", e);
+    res.status(500).json({ error: "Echec du chargement du compte." });
+  }
+});
+
+// Suppression d'un compte par l'admin (nettoyage complet)
+app.delete("/api/admin/users/:uid", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await deleteUserCompletely(req.params.uid);
+    res.json({ deleted: true });
+  } catch (e) {
+    console.error("admin delete user error", e);
+    res.status(500).json({ error: "Echec de la suppression du compte." });
+  }
+});
+
+// Validation / refus de l'identite d'un compte (pilote le badge verifie)
+app.patch("/api/admin/users/:uid/verify", requireAuth, requireAdmin, async (req, res) => {
+  const verified = req.body && req.body.verified === true;
+  try {
+    await db.doc(`users/${req.params.uid}`).update({
+      identityVerified: verified,
+      identityReviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+      identityReviewedBy: req.user.uid,
+    });
+    res.json({ ok: true, identityVerified: verified });
+  } catch (e) {
+    console.error("admin verify error", e);
+    res.status(500).json({ error: "Echec de la mise a jour de la verification." });
+  }
+});
+
+// Suppression d'une photo precise d'un compte (moderation)
+app.post("/api/admin/users/:uid/photos/delete", requireAuth, requireAdmin, async (req, res) => {
+  const index = Number(req.body && req.body.index);
+  try {
+    const ref = db.doc(`users/${req.params.uid}`);
+    const doc = await ref.get();
+    if (!doc.exists) return res.status(404).json({ error: "Compte introuvable." });
+    const photos = Array.isArray(doc.data().photos) ? doc.data().photos.slice() : [];
+    if (!Number.isInteger(index) || index < 0 || index >= photos.length) {
+      return res.status(400).json({ error: "Index de photo invalide." });
+    }
+    photos.splice(index, 1);
+    await ref.update({ photos });
+    res.json({ ok: true, photos });
+  } catch (e) {
+    console.error("admin delete photo error", e);
+    res.status(500).json({ error: "Echec de la suppression de la photo." });
+  }
+});
+
+// Liste des signalements (urgents en premier)
+app.get("/api/admin/reports", requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const snap = await db.collection("reports").orderBy("at", "desc").limit(500).get();
+    const reports = snap.docs.map((d) => {
+      const r = d.data();
+      return {
+        id: d.id,
+        reporter: r.reporter,
+        reported: r.reported,
+        reason: r.reason,
+        illegal: r.illegal === true,
+        priority: r.priority || "normal",
+        status: r.status || "pending",
+        at: r.at && r.at.toDate ? r.at.toDate().toISOString() : null,
+      };
+    });
+    // urgents d'abord
+    reports.sort((a, b) => (a.priority === "urgent" ? -1 : 1) - (b.priority === "urgent" ? -1 : 1));
+    res.json({ reports });
+  } catch (e) {
+    console.error("admin reports error", e);
+    res.status(500).json({ error: "Echec du chargement des signalements." });
   }
 });
 
