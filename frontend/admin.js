@@ -23,6 +23,8 @@ const auth = getAuth(app);
 
 const API_BASE = (typeof window !== "undefined" && window.__BILLE_API__) || "/api";
 const $ = (id) => document.getElementById(id);
+// Petite coche SVG inline (remplace l'emoji ✓)
+const CHECK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="width:0.85em;height:0.85em;vertical-align:-0.08em"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
 async function apiFetch(path, options = {}) {
   const user = auth.currentUser;
@@ -142,7 +144,7 @@ async function loadUsers() {
       const age = ageFromBirthdate(u.birthdate);
       info.innerHTML =
         `<div class="admin-row-name">${escapeHtml(u.pseudo || "(sans pseudo)")}` +
-        (u.identityVerified ? ' <span class="admin-verified">✓ vérifié</span>' : "") +
+        (u.identityVerified ? ' <span class="admin-verified">' + CHECK_SVG + ' vérifié</span>' : "") +
         `</div><div class="admin-row-meta">${age ? age + " ans · " : ""}${u.photosCount} photo(s)` +
         `${u.blockedCount ? " · " + u.blockedCount + " bloqué(s)" : ""}</div>`;
       const btn = document.createElement("button");
@@ -173,8 +175,8 @@ async function openUser(uid) {
     renderUserPhotos(uid, profile.photos || []);
     const age = ageFromBirthdate(profile.birthdate);
     $("admin-user-meta").innerHTML =
-      `<div><strong>Identité :</strong> ${profile.identityVerified ? "✓ vérifiée" : "non vérifiée"}</div>` +
-      `<div><strong>Âge vérifié :</strong> ${profile.ageVerified ? "✓ oui" + (profile.age ? " (" + profile.age + " ans, Stripe)" : "") : "non"}</div>` +
+      `<div><strong>Identité :</strong> ${profile.identityVerified ? CHECK_SVG + " vérifiée" : "non vérifiée"}</div>` +
+      `<div><strong>Âge vérifié :</strong> ${profile.ageVerified ? CHECK_SVG + " oui" + (profile.age ? " (" + profile.age + " ans, Stripe)" : "") : "non"}</div>` +
       `<div><strong>Âge (déclaré) :</strong> ${age || "?"}</div>` +
       `<div><strong>Genre :</strong> ${escapeHtml(profile.gender || "?")} · <strong>cherche :</strong> ${escapeHtml(profile.seeking || "?")}</div>` +
       `<div><strong>Bio :</strong> ${escapeHtml(profile.bio || "")}</div>` +

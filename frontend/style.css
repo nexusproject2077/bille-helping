@@ -325,8 +325,28 @@ textarea { resize: vertical; font-family: var(--font-body); }
 .msg.sent { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
 .msg.received { align-self: flex-start; background: var(--glass-strong); border-bottom-left-radius: 4px; }
 .chat-input-row { display: flex; gap: 10px; padding: 14px 16px; border-top: 1px solid var(--border); background: var(--bg-1); }
-.chat-input-row input { flex: 1; padding: 12px 15px; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 22px; color: var(--text); }
+.chat-input-row input[type="text"] { flex: 1; padding: 12px 15px; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 22px; color: var(--text); }
 .chat-input-row input:focus { outline: none; border-color: var(--primary); }
+
+/* ===== Medias du chat (images + videos) ===== */
+.attach-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; flex-shrink: 0; padding: 6px; display: flex; align-items: center; justify-content: center; }
+.attach-btn svg { width: 24px; height: 24px; }
+.attach-btn:hover { color: var(--text); }
+.attach-btn:disabled { opacity: 0.4; cursor: default; }
+.msg.media { padding: 4px; background: rgba(255,255,255,0.06); }
+.msg-media { display: block; max-width: 240px; max-height: 320px; border-radius: 12px; background: var(--bg-2); }
+img.msg-media { cursor: pointer; }
+.chat-upload { padding: 8px 16px; display: flex; align-items: center; gap: 10px; background: var(--bg-1); border-top: 1px solid var(--border); }
+.chat-upload-bar { flex: 1; height: 6px; border-radius: 6px; background: rgba(0,0,0,0.4); overflow: hidden; }
+.chat-upload-bar i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: width 0.2s; }
+.chat-upload-txt { font-size: 0.8rem; color: var(--text-muted); min-width: 88px; text-align: right; }
+.media-viewer { position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,0.92); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.media-viewer img, .media-viewer video { max-width: 100%; max-height: 100%; border-radius: 8px; }
+
+/* ===== Petites icones SVG inline (remplacent les emojis) ===== */
+.btn-ico { width: 1em; height: 1em; vertical-align: -0.12em; margin-right: 3px; }
+.ico-check { width: 0.9em; height: 0.9em; vertical-align: -0.08em; color: var(--accent); margin-left: 3px; }
+.admin-verified svg { width: 0.85em; height: 0.85em; vertical-align: -0.05em; }
 
 /* ===== Profil ===== */
 .profile-photos { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 16px; }

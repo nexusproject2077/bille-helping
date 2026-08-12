@@ -181,7 +181,7 @@
     <section id="view-discover" class="view active">
       <div class="discover-modes">
         <button id="mode-foryou" class="mode-btn active">Pour toi</button>
-        <button id="mode-dispo" class="mode-btn">&#9889; Dispo pres de toi</button>
+        <button id="mode-dispo" class="mode-btn"><svg class="btn-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="13 2 3 14 11 14 11 22 21 10 13 10 13 2"></polygon></svg>Dispo pres de toi</button>
       </div>
       <div id="swipe-area" class="swipe-area">
         <div id="swipe-empty" class="swipe-empty hidden">
@@ -342,7 +342,15 @@
       </button>
     </div>
     <div id="chat-messages" class="chat-messages"></div>
+    <div id="chat-upload" class="chat-upload hidden">
+      <div class="chat-upload-bar"><i id="chat-upload-fill"></i></div>
+      <span id="chat-upload-txt" class="chat-upload-txt">Envoi&hellip; 0%</span>
+    </div>
     <div class="chat-input-row">
+      <input type="file" id="chat-media-input" accept="image/*,video/*" class="hidden" />
+      <button id="btn-attach" class="attach-btn" title="Envoyer une photo ou une video">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>
+      </button>
       <input type="text" id="chat-input" placeholder="Ecris un message..." maxlength="500" />
       <button id="btn-send" class="send-btn" title="Envoyer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
@@ -529,7 +537,7 @@
     <div class="match-pop">
       <h2>C'est un match !</h2>
       <p id="match-text"></p>
-      <p id="match-nudge" class="match-nudge hidden">&#9889; Vous etes tous les deux dispo &mdash; un verre dans le coin ?</p>
+      <p id="match-nudge" class="match-nudge hidden"><svg class="btn-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="13 2 3 14 11 14 11 22 21 10 13 10 13 2"></polygon></svg>Vous etes tous les deux dispo &mdash; un verre dans le coin ?</p>
       <button id="btn-match-message" class="btn btn-primary">Envoyer un message</button>
       <button id="btn-match-continue" class="btn btn-ghost">Continuer a swiper</button>
     </div>

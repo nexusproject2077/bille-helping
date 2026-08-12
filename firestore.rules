@@ -64,12 +64,17 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if request.auth != null
                     && request.auth.uid in get(/databases/$(database)/documents/matches/$(matchId)).data.users;
+        // Un message est soit du texte (1-500), soit un media (image/video + URL).
         allow create: if request.auth != null
                       && request.auth.uid == request.resource.data.from
                       && request.auth.uid in get(/databases/$(database)/documents/matches/$(matchId)).data.users
-                      && request.resource.data.text is string
-                      && request.resource.data.text.size() > 0
-                      && request.resource.data.text.size() <= 500;
+                      && (
+                        (request.resource.data.text is string
+                          && request.resource.data.text.size() > 0
+                          && request.resource.data.text.size() <= 500)
+                        || (request.resource.data.type in ['image', 'video']
+                          && request.resource.data.mediaUrl is string)
+                      );
         // Update : autorise pour marquer comme lu (uniquement le destinataire, pas l'expediteur)
         allow update: if request.auth != null
                       && request.auth.uid in get(/databases/$(database)/documents/matches/$(matchId)).data.users

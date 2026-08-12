@@ -14,6 +14,9 @@ import {
   onSnapshot, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 import {
+  getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject
+} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-storage.js";
+import {
   geohashForLocation, geohashQueryBounds, distanceBetween
 } from "https://cdn.jsdelivr.net/npm/geofire-common@6.0.0/dist/geofire-common/index.esm.js";
 
@@ -30,6 +33,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
 // ===== Backend API (Cloud Run via rewrite Firebase Hosting) =====
 // Par defaut, le frontend appelle "/api/**" en same-origin ; Firebase
@@ -615,7 +619,7 @@ function renderProfile() {
   const vSt = $("verify-status"), vBtn = $("btn-verify");
   if (vSt && vBtn) {
     if (p.identityVerified === true) {
-      vSt.textContent = "Identite verifiee ✓";
+      vSt.innerHTML = 'Identite verifiee <svg class="ico-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
       vSt.className = "hint success";
       vBtn.classList.add("hidden");
     } else {
@@ -1386,12 +1390,30 @@ function openChat(matchId, otherUid, otherName) {
       const msg = d.data();
       const isMine = msg.from === currentUser.uid;
       const el = document.createElement("div");
-      el.className = "msg " + (isMine ? "sent" : "received");
+      const isMedia = msg.type === "image" || msg.type === "video";
+      el.className = "msg " + (isMine ? "sent" : "received") + (isMedia ? " media" : "");
 
-      const textSpan = document.createElement("span");
-      textSpan.className = "msg-text";
-      textSpan.textContent = msg.text;
-      el.appendChild(textSpan);
+      if (msg.type === "image") {
+        const img = document.createElement("img");
+        img.className = "msg-media";
+        img.loading = "lazy";
+        img.src = msg.mediaUrl;
+        img.addEventListener("click", () => openMediaView(msg.mediaUrl, "image"));
+        el.appendChild(img);
+      } else if (msg.type === "video") {
+        const vid = document.createElement("video");
+        vid.className = "msg-media";
+        vid.src = msg.mediaUrl;
+        vid.controls = true;
+        vid.preload = "metadata";
+        vid.setAttribute("playsinline", "");
+        el.appendChild(vid);
+      } else {
+        const textSpan = document.createElement("span");
+        textSpan.className = "msg-text";
+        textSpan.textContent = msg.text;
+        el.appendChild(textSpan);
+      }
 
       // Ticks uniquement sur MES messages (envoyes par moi)
       if (isMine) {
@@ -1454,6 +1476,133 @@ async function sendMessage() {
 }
 $("btn-send").addEventListener("click", sendMessage);
 $("chat-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
+
+// ============================================================
+// MEDIAS DU CHAT (images + videos courtes, upload Firebase Storage)
+// ============================================================
+const MEDIA_LIMITS = {
+  imageMaxBytes: 8 * 1024 * 1024,   // 8 Mo (apres compression)
+  videoMaxBytes: 30 * 1024 * 1024,  // 30 Mo
+  videoMaxSeconds: 30,              // 30 s
+  imageMaxPx: 1920,
+  imageQuality: 0.91
+};
+
+$("btn-attach").addEventListener("click", () => $("chat-media-input").click());
+$("chat-media-input").addEventListener("change", handleMediaPick);
+
+async function handleMediaPick(e) {
+  const file = e.target.files[0];
+  e.target.value = ""; // permet de re-choisir le meme fichier
+  if (!file || !activeChat) return;
+
+  const isImage = file.type.startsWith("image/");
+  const isVideo = file.type.startsWith("video/");
+  if (!isImage && !isVideo) { toast("Choisis une image ou une video."); return; }
+
+  try {
+    if (isVideo) {
+      if (file.size > MEDIA_LIMITS.videoMaxBytes) { toast("Video trop lourde (max 30 Mo)."); return; }
+      const dur = await getVideoDuration(file);
+      if (dur > MEDIA_LIMITS.videoMaxSeconds + 0.5) { toast("Video trop longue (max 30 s)."); return; }
+      await uploadMedia(file, "video", fileExtension(file) || "mp4");
+    } else {
+      // Compression douce : 1920 px max, qualite 0.91 -> quasi invisible, poids reduit
+      const blob = await compressImageToBlob(file, MEDIA_LIMITS.imageMaxPx, MEDIA_LIMITS.imageQuality);
+      if (blob.size > MEDIA_LIMITS.imageMaxBytes) { toast("Image trop lourde (max 8 Mo)."); return; }
+      await uploadMedia(blob, "image", "jpg");
+    }
+  } catch (err) {
+    console.error("media pick:", err);
+    toast("Impossible de traiter ce fichier.");
+  }
+}
+
+function fileExtension(file) {
+  const m = /\.([a-z0-9]+)$/i.exec(file.name || "");
+  return m ? m[1].toLowerCase() : "";
+}
+
+// Lit la duree d'une video sans l'afficher
+function getVideoDuration(file) {
+  return new Promise((resolve, reject) => {
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.onloadedmetadata = () => { const d = v.duration; URL.revokeObjectURL(v.src); resolve(d); };
+    v.onerror = () => reject(new Error("Lecture video impossible"));
+    v.src = URL.createObjectURL(file);
+  });
+}
+
+// Compression image -> Blob JPEG
+function compressImageToBlob(file, maxPx, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxPx || height > maxPx) {
+          if (width >= height) { height = Math.round(height * maxPx / width); width = maxPx; }
+          else { width = Math.round(width * maxPx / height); height = maxPx; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("compression"))), "image/jpeg", quality);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Upload vers Storage avec barre de progression, puis message Firestore
+async function uploadMedia(blob, type, ext) {
+  const matchId = activeChat.matchId;
+  const path = `matches/${matchId}/${currentUser.uid}_${Date.now()}.${ext}`;
+  const up = $("chat-upload"), fill = $("chat-upload-fill"), txt = $("chat-upload-txt");
+  up.classList.remove("hidden"); fill.style.width = "0%"; txt.textContent = "Envoi… 0%";
+  $("btn-attach").disabled = true;
+
+  try {
+    const task = uploadBytesResumable(storageRef(storage, path), blob, { contentType: blob.type });
+    task.on("state_changed", (snap) => {
+      const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+      fill.style.width = pct + "%"; txt.textContent = "Envoi… " + pct + "%";
+    });
+    await task;
+    const url = await getDownloadURL(storageRef(storage, path));
+    await addDoc(collection(db, "matches", matchId, "messages"), {
+      from: currentUser.uid, type, mediaUrl: url, mediaPath: path, read: false, at: serverTimestamp()
+    });
+    await updateDoc(doc(db, "matches", matchId), {
+      lastMessage: type === "image" ? "Photo" : "Video",
+      lastMessageAt: serverTimestamp(),
+      lastSender: currentUser.uid
+    });
+  } catch (e) {
+    console.error("upload media:", e);
+    toast("Echec de l'envoi : " + (e.message || e.code || "erreur"));
+  } finally {
+    up.classList.add("hidden");
+    $("btn-attach").disabled = false;
+  }
+}
+
+// Visionneuse plein ecran (image)
+function openMediaView(url, type) {
+  const ov = document.createElement("div");
+  ov.className = "media-viewer";
+  const el = document.createElement(type === "video" ? "video" : "img");
+  el.src = url;
+  if (type === "video") { el.controls = true; el.setAttribute("playsinline", ""); }
+  ov.appendChild(el);
+  ov.addEventListener("click", () => ov.remove());
+  document.body.appendChild(ov);
+}
 
 // ============================================================
 // PROFIL DETAILLE (au tap sur une carte ou bouton info)
