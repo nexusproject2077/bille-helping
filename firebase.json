@@ -17,15 +17,9 @@
     ],
     "headers": [
       {
-        "source": "**/*.@(js|css)",
+        "source": "**/*.@(js|css|html)",
         "headers": [
-          { "key": "Cache-Control", "value": "public, max-age=3600" }
-        ]
-      },
-      {
-        "source": "/index.html",
-        "headers": [
-          { "key": "Cache-Control", "value": "no-cache" }
+          { "key": "Cache-Control", "value": "no-cache, max-age=0, must-revalidate" }
         ]
       }
     ]

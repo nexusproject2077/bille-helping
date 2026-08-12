@@ -405,6 +405,59 @@ app.post("/api/verify/start", requireAuth, async (req, res) => {
 });
 
 // ============================================================
+// GET /api/places/nearby?lat=&lng= — cafes/bars autour d'un point
+// (le point median FLOUTE calcule cote client ; jamais une position exacte).
+// Utilise Google Places (New) avec une cle serveur (PLACES_API_KEY).
+// ============================================================
+app.get("/api/places/nearby", requireAuth, async (req, res) => {
+  if (!process.env.PLACES_API_KEY) {
+    return res.status(503).json({ error: "Suggestions de lieux non configurees." });
+  }
+  const lat = parseFloat(req.query.lat);
+  const lng = parseFloat(req.query.lng);
+  if (!isFinite(lat) || !isFinite(lng)) {
+    return res.status(400).json({ error: "Coordonnees invalides." });
+  }
+  try {
+    const r = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": process.env.PLACES_API_KEY,
+        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.id",
+      },
+      body: JSON.stringify({
+        includedTypes: ["cafe", "bar"],
+        maxResultCount: 3,
+        locationRestriction: {
+          circle: { center: { latitude: lat, longitude: lng }, radius: 1500 },
+        },
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      console.error("places error", data);
+      return res.status(502).json({ error: "Places indisponible." });
+    }
+    const venues = (data.places || []).slice(0, 3).map((p) => {
+      const name = p.displayName ? p.displayName.text : "Lieu";
+      return {
+        name,
+        address: p.formattedAddress || "",
+        mapsUrl:
+          "https://www.google.com/maps/search/?api=1&query=" +
+          encodeURIComponent(name) +
+          (p.id ? "&query_place_id=" + p.id : ""),
+      };
+    });
+    res.json({ venues });
+  } catch (e) {
+    console.error("places fetch error", e);
+    res.status(500).json({ error: "Erreur lors de la recherche de lieux." });
+  }
+});
+
+// ============================================================
 // ADMIN — moderation (reserve aux comptes admin)
 // ============================================================
 

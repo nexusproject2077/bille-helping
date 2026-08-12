@@ -1391,9 +1391,14 @@ function openChat(matchId, otherUid, otherName) {
       const isMine = msg.from === currentUser.uid;
       const el = document.createElement("div");
       const isMedia = msg.type === "image" || msg.type === "video";
-      el.className = "msg " + (isMine ? "sent" : "received") + (isMedia ? " media" : "");
+      const isPlace = msg.type === "place" || msg.type === "place_reply";
+      el.className = "msg " + (isMine ? "sent" : "received") + (isMedia ? " media" : "") + (isPlace ? " place-msg" : "");
 
-      if (msg.type === "image") {
+      if (msg.type === "place") {
+        renderPlaceMessage(el, msg, isMine, matchId);
+      } else if (msg.type === "place_reply") {
+        renderPlaceReply(el, msg);
+      } else if (msg.type === "image") {
         const img = document.createElement("img");
         img.className = "msg-media";
         img.loading = "lazy";
@@ -1415,8 +1420,8 @@ function openChat(matchId, otherUid, otherName) {
         el.appendChild(textSpan);
       }
 
-      // Ticks uniquement sur MES messages (envoyes par moi)
-      if (isMine) {
+      // Ticks uniquement sur MES messages texte/media (pas sur les cartes lieu)
+      if (isMine && !isPlace) {
         const ticks = document.createElement("span");
         ticks.className = "msg-ticks" + (msg.read ? " read" : "");
         ticks.innerHTML = msg.read ? doubleTickSVG() : singleTickSVG();
@@ -1603,6 +1608,153 @@ function openMediaView(url, type) {
   ov.addEventListener("click", () => ov.remove());
   document.body.appendChild(ov);
 }
+
+// ============================================================
+// PROPOSER UN LIEU (point median floute + Google Places)
+// ============================================================
+const PLACE_SLOTS = ["Ce soir 19h", "Demain", "Ce week-end"];
+let placeMid = null;
+let placeVenues = [];
+let placeWhen = null;
+
+$("btn-place").addEventListener("click", openPlaceSheet);
+$("btn-place-cancel").addEventListener("click", () => $("place-modal").classList.add("hidden"));
+$("btn-place-send").addEventListener("click", sendPlaceMessage);
+
+async function openPlaceSheet() {
+  if (!activeChat) return;
+  if (!currentProfile.location) { toast("Active ta localisation dans ton profil."); return; }
+  placeWhen = null; placeVenues = [];
+  $("place-venues").innerHTML = "";
+  $("place-status").textContent = "Recherche de lieux…";
+  renderPlaceSlots();
+  $("place-modal").classList.remove("hidden");
+  try {
+    const otherDoc = await getDoc(doc(db, "users", activeChat.otherUid));
+    const otherLoc = otherDoc.exists() ? otherDoc.data().location : null;
+    if (!otherLoc) { $("place-status").textContent = activeChat.otherName + " n'a pas partage sa zone."; return; }
+    // Point median des deux zones DEJA floutees (~1 km) : jamais une position exacte
+    placeMid = {
+      lat: (currentProfile.location.lat + otherLoc.lat) / 2,
+      lng: (currentProfile.location.lng + otherLoc.lng) / 2
+    };
+    let venues = [];
+    try {
+      const res = await apiFetch("/places/nearby?lat=" + placeMid.lat + "&lng=" + placeMid.lng, { method: "GET" });
+      venues = (await res.json()).venues || [];
+    } catch (_) { /* repli ci-dessous */ }
+    if (!venues.length) {
+      // Repli sans Places : lien de recherche Maps autour du point median (zone, pas adresse)
+      venues = [{
+        name: "Cafes & bars a proximite", address: "",
+        mapsUrl: "https://www.google.com/maps/search/cafe+bar/@" + placeMid.lat + "," + placeMid.lng + ",15z"
+      }];
+    }
+    placeVenues = venues;
+    renderPlaceVenues();
+    $("place-status").textContent = "";
+  } catch (e) {
+    $("place-status").textContent = "Erreur : " + e.message;
+  }
+}
+
+function renderPlaceVenues() {
+  const box = $("place-venues");
+  box.innerHTML = "";
+  placeVenues.forEach((v) => {
+    const row = document.createElement("div");
+    row.className = "place-venue";
+    row.innerHTML = '<div class="place-venue-name">' + escapeHtmlLite(v.name) + "</div>" +
+      (v.address ? '<div class="place-venue-addr">' + escapeHtmlLite(v.address) + "</div>" : "");
+    box.appendChild(row);
+  });
+}
+
+function renderPlaceSlots() {
+  const box = $("place-when");
+  box.innerHTML = "";
+  PLACE_SLOTS.forEach((s) => {
+    const chip = document.createElement("button");
+    chip.className = "chip" + (placeWhen === s ? " selected" : "");
+    chip.textContent = s;
+    chip.addEventListener("click", () => { placeWhen = placeWhen === s ? null : s; renderPlaceSlots(); });
+    box.appendChild(chip);
+  });
+}
+
+async function sendPlaceMessage() {
+  if (!activeChat || !placeVenues.length) return;
+  try {
+    await addDoc(collection(db, "matches", activeChat.matchId, "messages"), {
+      from: currentUser.uid, type: "place",
+      venues: placeVenues.slice(0, 3), when: placeWhen || null,
+      read: false, at: serverTimestamp()
+    });
+    await updateDoc(doc(db, "matches", activeChat.matchId), {
+      lastMessage: "Rendez-vous propose", lastMessageAt: serverTimestamp(), lastSender: currentUser.uid
+    });
+    $("place-modal").classList.add("hidden");
+  } catch (e) { $("place-status").textContent = "Erreur : " + e.message; }
+}
+
+// Carte "Rendez-vous propose" (avec reponses pour le destinataire)
+function renderPlaceMessage(el, msg, isMine) {
+  const card = document.createElement("div");
+  card.className = "place-card";
+  let html = '<div class="place-card-head">' + pinSVG() + " Rendez-vous propose</div>";
+  (msg.venues || []).forEach((v) => {
+    html += '<a class="place-card-venue" href="' + v.mapsUrl + '" target="_blank" rel="noopener">' +
+      "<span>" + escapeHtmlLite(v.name) + "</span>" + mapSVG() + "</a>";
+  });
+  if (msg.when) html += '<div class="place-card-when">' + escapeHtmlLite(msg.when) + "</div>";
+  card.innerHTML = html;
+  if (!isMine) {
+    const actions = document.createElement("div");
+    actions.className = "place-card-actions";
+    const acc = document.createElement("button"); acc.className = "btn btn-primary btn-small"; acc.textContent = "Accepter";
+    acc.addEventListener("click", () => sendPlaceReply("accepted", msg.when || null));
+    const ref = document.createElement("button"); ref.className = "btn btn-ghost btn-small"; ref.textContent = "Refuser";
+    ref.addEventListener("click", () => sendPlaceReply("refused", null));
+    const oth = document.createElement("button"); oth.className = "btn btn-ghost btn-small"; oth.textContent = "Autre creneau";
+    oth.addEventListener("click", () => { const w = prompt("Quel creneau proposes-tu ?", "Demain 20h"); if (w) sendPlaceReply("counter", w); });
+    actions.appendChild(acc); actions.appendChild(ref); actions.appendChild(oth);
+    card.appendChild(actions);
+  }
+  el.appendChild(card);
+}
+
+async function sendPlaceReply(status, when) {
+  if (!activeChat) return;
+  try {
+    await addDoc(collection(db, "matches", activeChat.matchId, "messages"), {
+      from: currentUser.uid, type: "place_reply", status, when: when || null, read: false, at: serverTimestamp()
+    });
+    const label = status === "accepted" ? "Rendez-vous accepte" : status === "refused" ? "Rendez-vous refuse" : "Autre creneau propose";
+    await updateDoc(doc(db, "matches", activeChat.matchId), {
+      lastMessage: label, lastMessageAt: serverTimestamp(), lastSender: currentUser.uid
+    });
+  } catch (e) { toast("Erreur : " + e.message); }
+}
+
+function renderPlaceReply(el, msg) {
+  const s = msg.status;
+  const txt = s === "accepted" ? "Rendez-vous accepte" + (msg.when ? " (" + msg.when + ")" : "")
+    : s === "refused" ? "Rendez-vous refuse"
+    : "Propose plutot : " + (msg.when || "un autre creneau");
+  const span = document.createElement("span");
+  span.className = "place-reply " + s;
+  span.innerHTML = (s === "accepted" ? checkSVG() : s === "refused" ? crossSVG() : pinSVG()) + " " + escapeHtmlLite(txt);
+  el.appendChild(span);
+}
+
+// --- petits helpers SVG + echappement ---
+function escapeHtmlLite(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function pinSVG() { return '<svg class="place-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>'; }
+function mapSVG() { return '<svg class="place-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>'; }
+function checkSVG() { return '<svg class="place-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'; }
+function crossSVG() { return '<svg class="place-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>'; }
 
 // ============================================================
 // PROFIL DETAILLE (au tap sur une carte ou bouton info)

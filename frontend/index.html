@@ -351,6 +351,9 @@
       <button id="btn-attach" class="attach-btn" title="Envoyer une photo ou une video">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>
       </button>
+      <button id="btn-place" class="attach-btn" title="Proposer un lieu de rencontre">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+      </button>
       <input type="text" id="chat-input" placeholder="Ecris un message..." maxlength="500" />
       <button id="btn-send" class="send-btn" title="Envoyer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
@@ -464,6 +467,22 @@
       <button id="btn-confirm-report" class="btn btn-danger btn-block">Signaler et bloquer</button>
       <button id="btn-cancel-report" class="btn btn-ghost btn-small btn-block">Annuler</button>
       <p id="report-status" class="status"></p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- PROPOSER UN LIEU (modale)                                    -->
+  <!-- ============================================================ -->
+  <div id="place-modal" class="modal hidden">
+    <div class="modal-card">
+      <h3>Proposer un lieu</h3>
+      <p class="hint">Autour d'un point neutre entre vos deux zones. Ta position exacte n'est jamais partagee.</p>
+      <div id="place-venues" class="place-venues"></div>
+      <h4>Un creneau ?</h4>
+      <div id="place-when" class="chips"></div>
+      <button id="btn-place-send" class="btn btn-primary btn-block">Proposer</button>
+      <button id="btn-place-cancel" class="btn btn-ghost btn-small btn-block">Annuler</button>
+      <p id="place-status" class="status"></p>
     </div>
   </div>
 
