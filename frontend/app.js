@@ -1620,12 +1620,15 @@ let placeWhen = null;
 $("btn-place").addEventListener("click", openPlaceSheet);
 $("btn-place-cancel").addEventListener("click", () => $("place-modal").classList.add("hidden"));
 $("btn-place-send").addEventListener("click", sendPlaceMessage);
+$("btn-place-add").addEventListener("click", addCustomPlace);
+$("place-custom-input").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addCustomPlace(); } });
 
 async function openPlaceSheet() {
   if (!activeChat) return;
   if (!currentProfile.location) { toast("Active ta localisation dans ton profil."); return; }
   placeWhen = null; placeVenues = [];
   $("place-venues").innerHTML = "";
+  $("place-custom-input").value = "";
   $("place-status").textContent = "Recherche de lieux…";
   renderPlaceSlots();
   $("place-modal").classList.remove("hidden");
@@ -1650,7 +1653,8 @@ async function openPlaceSheet() {
         mapsUrl: "https://www.google.com/maps/search/cafe+bar/@" + placeMid.lat + "," + placeMid.lng + ",15z"
       }];
     }
-    placeVenues = venues;
+    // Tous selectionnes par defaut ; l'utilisateur peut decocher / ajouter les siens
+    placeVenues = venues.map((v) => ({ ...v, selected: true }));
     renderPlaceVenues();
     $("place-status").textContent = "";
   } catch (e) {
@@ -1662,12 +1666,30 @@ function renderPlaceVenues() {
   const box = $("place-venues");
   box.innerHTML = "";
   placeVenues.forEach((v) => {
-    const row = document.createElement("div");
-    row.className = "place-venue";
-    row.innerHTML = '<div class="place-venue-name">' + escapeHtmlLite(v.name) + "</div>" +
-      (v.address ? '<div class="place-venue-addr">' + escapeHtmlLite(v.address) + "</div>" : "");
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "place-venue" + (v.selected ? " selected" : "");
+    row.innerHTML =
+      '<span class="place-venue-info"><span class="place-venue-name">' + escapeHtmlLite(v.name) + "</span>" +
+      (v.address ? '<span class="place-venue-addr">' + escapeHtmlLite(v.address) + "</span>" : "") + "</span>" +
+      '<span class="place-venue-check">' + (v.selected ? checkSVG() : "") + "</span>";
+    row.addEventListener("click", () => { v.selected = !v.selected; renderPlaceVenues(); });
     box.appendChild(row);
   });
+}
+
+// Ajoute un lieu personnalise (texte libre -> recherche Maps autour de la zone)
+function addCustomPlace() {
+  const t = $("place-custom-input").value.trim();
+  if (!t) return;
+  const zone = placeMid ? "/@" + placeMid.lat + "," + placeMid.lng + ",15z" : "";
+  placeVenues.push({
+    name: t, address: "",
+    mapsUrl: "https://www.google.com/maps/search/" + encodeURIComponent(t) + zone,
+    selected: true, custom: true
+  });
+  $("place-custom-input").value = "";
+  renderPlaceVenues();
 }
 
 function renderPlaceSlots() {
@@ -1683,11 +1705,17 @@ function renderPlaceSlots() {
 }
 
 async function sendPlaceMessage() {
-  if (!activeChat || !placeVenues.length) return;
+  if (!activeChat) return;
+  // On n'envoie que les lieux coches (nettoyes des champs internes)
+  const chosen = placeVenues
+    .filter((v) => v.selected)
+    .slice(0, 3)
+    .map((v) => ({ name: v.name, address: v.address || "", mapsUrl: v.mapsUrl }));
+  if (!chosen.length) { $("place-status").textContent = "Choisis au moins un lieu."; return; }
   try {
     await addDoc(collection(db, "matches", activeChat.matchId, "messages"), {
       from: currentUser.uid, type: "place",
-      venues: placeVenues.slice(0, 3), when: placeWhen || null,
+      venues: chosen, when: placeWhen || null,
       read: false, at: serverTimestamp()
     });
     await updateDoc(doc(db, "matches", activeChat.matchId), {

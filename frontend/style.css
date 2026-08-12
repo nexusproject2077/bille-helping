@@ -345,9 +345,17 @@ img.msg-media { cursor: pointer; }
 
 /* ===== Proposer un lieu ===== */
 .place-venues { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 6px; }
-.place-venue { background: var(--glass); border: 1px solid var(--border); border-radius: var(--radius-s); padding: 10px 12px; }
+.place-venue { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; background: var(--glass); border: 1px solid var(--border); border-radius: var(--radius-s); padding: 10px 12px; cursor: pointer; color: var(--text); font-family: var(--font-body); transition: border-color 0.15s, opacity 0.15s; }
+.place-venue:not(.selected) { opacity: 0.55; }
+.place-venue.selected { border-color: var(--accent); }
+.place-venue-info { display: flex; flex-direction: column; min-width: 0; }
 .place-venue-name { font-weight: 600; font-size: 0.92rem; }
 .place-venue-addr { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+.place-venue-check { color: var(--accent); width: 20px; flex-shrink: 0; display: flex; justify-content: center; }
+.place-venue-check svg { width: 18px; height: 18px; }
+.place-custom { display: flex; gap: 8px; margin: 8px 0 4px; }
+.place-custom input { flex: 1; padding: 10px 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: var(--radius-s); color: var(--text); }
+.place-custom .btn { margin: 0; flex-shrink: 0; }
 #place-modal .modal-card h4 { margin: 10px 0 8px; }
 
 .msg.place-msg { max-width: 82%; background: transparent; padding: 0; }
