@@ -363,6 +363,10 @@ img.msg-media { cursor: pointer; }
 .place-reply.accepted { color: var(--success); }
 .place-reply.refused { color: var(--pass); }
 .place-reply.counter { color: var(--accent); }
+.msg.place-msg { flex-direction: column; }
+.msg.place-msg.sent { align-items: flex-end; }
+.msg.place-msg.received { align-items: flex-start; }
+.place-repropose { margin: 8px 0 0; }
 
 /* ===== Petites icones SVG inline (remplacent les emojis) ===== */
 .btn-ico { width: 1em; height: 1em; vertical-align: -0.12em; margin-right: 3px; }

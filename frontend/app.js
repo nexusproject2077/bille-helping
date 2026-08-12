@@ -1397,7 +1397,7 @@ function openChat(matchId, otherUid, otherName) {
       if (msg.type === "place") {
         renderPlaceMessage(el, msg, isMine, matchId);
       } else if (msg.type === "place_reply") {
-        renderPlaceReply(el, msg);
+        renderPlaceReply(el, msg, isMine);
       } else if (msg.type === "image") {
         const img = document.createElement("img");
         img.className = "msg-media";
@@ -1736,7 +1736,7 @@ async function sendPlaceReply(status, when) {
   } catch (e) { toast("Erreur : " + e.message); }
 }
 
-function renderPlaceReply(el, msg) {
+function renderPlaceReply(el, msg, isMine) {
   const s = msg.status;
   const txt = s === "accepted" ? "Rendez-vous accepte" + (msg.when ? " (" + msg.when + ")" : "")
     : s === "refused" ? "Rendez-vous refuse"
@@ -1745,6 +1745,14 @@ function renderPlaceReply(el, msg) {
   span.className = "place-reply " + s;
   span.innerHTML = (s === "accepted" ? checkSVG() : s === "refused" ? crossSVG() : pinSVG()) + " " + escapeHtmlLite(txt);
   el.appendChild(span);
+  // Si l'AUTRE a refuse ou propose un autre creneau, je peux reproposer un lieu direct
+  if (!isMine && (s === "refused" || s === "counter")) {
+    const btn = document.createElement("button");
+    btn.className = "btn btn-ghost btn-small place-repropose";
+    btn.textContent = "Proposer un autre lieu";
+    btn.addEventListener("click", openPlaceSheet);
+    el.appendChild(btn);
+  }
 }
 
 // --- petits helpers SVG + echappement ---
