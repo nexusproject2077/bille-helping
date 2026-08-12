@@ -1634,13 +1634,16 @@ $("place-custom-input").addEventListener("input", () => {
 
 async function fetchPlaceSuggestions(q) {
   const box = $("place-suggestions");
+  const note = (msg) => { box.innerHTML = '<div class="place-suggestions-note">' + escapeHtmlLite(msg) + "</div>"; };
+  note("Recherche…");
   try {
     let url = "/places/autocomplete?q=" + encodeURIComponent(q);
     if (placeMid) url += "&lat=" + placeMid.lat + "&lng=" + placeMid.lng;
     const res = await apiFetch(url, { method: "GET" });
     const { suggestions } = await res.json();
     box.innerHTML = "";
-    (suggestions || []).forEach((s) => {
+    if (!suggestions || !suggestions.length) { note("Aucune suggestion — tu peux ajouter le nom tel quel."); return; }
+    suggestions.forEach((s) => {
       const it = document.createElement("button");
       it.type = "button";
       it.className = "place-suggestion";
@@ -1649,8 +1652,9 @@ async function fetchPlaceSuggestions(q) {
       it.addEventListener("click", () => addSuggestion(s));
       box.appendChild(it);
     });
-  } catch (_) {
-    box.innerHTML = ""; // repli : le bouton "Ajouter" reste dispo
+  } catch (e) {
+    // Repli : le bouton "Ajouter" reste dispo pour saisir le nom en texte libre.
+    note("Suggestions indisponibles — utilise le bouton « Ajouter ».");
   }
 }
 

@@ -361,6 +361,7 @@ img.msg-media { cursor: pointer; }
 .place-suggestion:hover { background: rgba(0,0,0,0.42); border-color: var(--accent); }
 .place-suggestion .place-venue-name { font-weight: 600; font-size: 0.92rem; }
 .place-suggestion .place-venue-addr { font-size: 0.78rem; color: var(--text-muted); }
+.place-suggestions-note { font-size: 0.8rem; color: var(--text-muted); padding: 6px 4px; }
 #place-modal .modal-card h4 { margin: 10px 0 8px; }
 
 .msg.place-msg { max-width: 82%; background: transparent; padding: 0; }
