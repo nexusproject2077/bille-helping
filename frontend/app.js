@@ -1623,12 +1623,57 @@ $("btn-place-send").addEventListener("click", sendPlaceMessage);
 $("btn-place-add").addEventListener("click", addCustomPlace);
 $("place-custom-input").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addCustomPlace(); } });
 
+// Autocompletion Google Places (suggestions cliquables)
+let placeAcTimer = null;
+$("place-custom-input").addEventListener("input", () => {
+  clearTimeout(placeAcTimer);
+  const q = $("place-custom-input").value.trim();
+  if (q.length < 2) { $("place-suggestions").innerHTML = ""; return; }
+  placeAcTimer = setTimeout(() => fetchPlaceSuggestions(q), 250);
+});
+
+async function fetchPlaceSuggestions(q) {
+  const box = $("place-suggestions");
+  try {
+    let url = "/places/autocomplete?q=" + encodeURIComponent(q);
+    if (placeMid) url += "&lat=" + placeMid.lat + "&lng=" + placeMid.lng;
+    const res = await apiFetch(url, { method: "GET" });
+    const { suggestions } = await res.json();
+    box.innerHTML = "";
+    (suggestions || []).forEach((s) => {
+      const it = document.createElement("button");
+      it.type = "button";
+      it.className = "place-suggestion";
+      it.innerHTML = '<span class="place-venue-name">' + escapeHtmlLite(s.name) + "</span>" +
+        (s.address ? '<span class="place-venue-addr">' + escapeHtmlLite(s.address) + "</span>" : "");
+      it.addEventListener("click", () => addSuggestion(s));
+      box.appendChild(it);
+    });
+  } catch (_) {
+    box.innerHTML = ""; // repli : le bouton "Ajouter" reste dispo
+  }
+}
+
+function addSuggestion(s) {
+  const pid = s.placeId ? "&query_place_id=" + s.placeId : "";
+  placeVenues.push({
+    name: s.name,
+    address: s.address || "",
+    mapsUrl: "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(s.name) + pid,
+    selected: true, custom: true
+  });
+  $("place-custom-input").value = "";
+  $("place-suggestions").innerHTML = "";
+  renderPlaceVenues();
+}
+
 async function openPlaceSheet() {
   if (!activeChat) return;
   if (!currentProfile.location) { toast("Active ta localisation dans ton profil."); return; }
   placeWhen = null; placeVenues = [];
   $("place-venues").innerHTML = "";
   $("place-custom-input").value = "";
+  $("place-suggestions").innerHTML = "";
   $("place-status").textContent = "Recherche de lieux…";
   renderPlaceSlots();
   $("place-modal").classList.remove("hidden");

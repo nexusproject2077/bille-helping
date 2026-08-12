@@ -479,9 +479,10 @@
       <p class="hint">Autour d'un point neutre entre vos deux zones. Ta position exacte n'est jamais partagee. Choisis les lieux a proposer, ou ajoute le tien.</p>
       <div id="place-venues" class="place-venues"></div>
       <div class="place-custom">
-        <input type="text" id="place-custom-input" placeholder="Ajouter un autre lieu..." maxlength="80" />
+        <input type="text" id="place-custom-input" placeholder="Rechercher un lieu..." maxlength="80" autocomplete="off" />
         <button id="btn-place-add" class="btn btn-ghost btn-small">Ajouter</button>
       </div>
+      <div id="place-suggestions" class="place-suggestions"></div>
       <h4>Un creneau ?</h4>
       <div id="place-when" class="chips"></div>
       <button id="btn-place-send" class="btn btn-primary btn-block">Proposer</button>

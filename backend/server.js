@@ -458,6 +458,49 @@ app.get("/api/places/nearby", requireAuth, async (req, res) => {
 });
 
 // ============================================================
+// GET /api/places/autocomplete?q=&lat=&lng= — suggestions Google Places
+// (autour du point median floute ; jamais une position exacte).
+// ============================================================
+app.get("/api/places/autocomplete", requireAuth, async (req, res) => {
+  if (!process.env.PLACES_API_KEY) {
+    return res.status(503).json({ error: "Suggestions non configurees." });
+  }
+  const q = (req.query.q || "").toString().trim();
+  if (q.length < 2) return res.json({ suggestions: [] });
+  const lat = parseFloat(req.query.lat);
+  const lng = parseFloat(req.query.lng);
+  try {
+    const body = { input: q };
+    if (isFinite(lat) && isFinite(lng)) {
+      body.locationBias = { circle: { center: { latitude: lat, longitude: lng }, radius: 5000 } };
+    }
+    const r = await fetch("https://places.googleapis.com/v1/places:autocomplete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Goog-Api-Key": process.env.PLACES_API_KEY },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      console.error("autocomplete error", data);
+      return res.status(502).json({ error: "Suggestions indisponibles." });
+    }
+    const suggestions = (data.suggestions || [])
+      .map((s) => s.placePrediction)
+      .filter(Boolean)
+      .slice(0, 5)
+      .map((p) => ({
+        placeId: p.placeId,
+        name: p.structuredFormat && p.structuredFormat.mainText ? p.structuredFormat.mainText.text : (p.text ? p.text.text : ""),
+        address: p.structuredFormat && p.structuredFormat.secondaryText ? p.structuredFormat.secondaryText.text : "",
+      }));
+    res.json({ suggestions });
+  } catch (e) {
+    console.error("autocomplete fetch error", e);
+    res.status(500).json({ error: "Erreur d'autocompletion." });
+  }
+});
+
+// ============================================================
 // ADMIN — moderation (reserve aux comptes admin)
 // ============================================================
 
