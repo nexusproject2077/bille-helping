@@ -1620,64 +1620,34 @@ let placeWhen = null;
 $("btn-place").addEventListener("click", openPlaceSheet);
 $("btn-place-cancel").addEventListener("click", () => $("place-modal").classList.add("hidden"));
 $("btn-place-send").addEventListener("click", sendPlaceMessage);
-$("btn-place-add").addEventListener("click", addCustomPlace);
-$("place-custom-input").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addCustomPlace(); } });
 
-// Autocompletion Google Places (suggestions cliquables)
-let placeAcTimer = null;
-$("place-custom-input").addEventListener("input", () => {
-  clearTimeout(placeAcTimer);
-  const q = $("place-custom-input").value.trim();
-  if (q.length < 2) { $("place-suggestions").innerHTML = ""; return; }
-  placeAcTimer = setTimeout(() => fetchPlaceSuggestions(q), 250);
-});
-
-async function fetchPlaceSuggestions(q) {
-  const box = $("place-suggestions");
-  const note = (msg) => { box.innerHTML = '<div class="place-suggestions-note">' + escapeHtmlLite(msg) + "</div>"; };
-  note("Recherche…");
-  try {
-    let url = "/places/autocomplete?q=" + encodeURIComponent(q);
-    if (placeMid) url += "&lat=" + placeMid.lat + "&lng=" + placeMid.lng;
-    const res = await apiFetch(url, { method: "GET" });
-    const { suggestions } = await res.json();
-    box.innerHTML = "";
-    if (!suggestions || !suggestions.length) { note("Aucune suggestion — tu peux ajouter le nom tel quel."); return; }
-    suggestions.forEach((s) => {
-      const it = document.createElement("button");
-      it.type = "button";
-      it.className = "place-suggestion";
-      it.innerHTML = '<span class="place-venue-name">' + escapeHtmlLite(s.name) + "</span>" +
-        (s.address ? '<span class="place-venue-addr">' + escapeHtmlLite(s.address) + "</span>" : "");
-      it.addEventListener("click", () => addSuggestion(s));
-      box.appendChild(it);
-    });
-  } catch (e) {
-    // Repli : le bouton "Ajouter" reste dispo pour saisir le nom en texte libre.
-    note("Suggestions indisponibles — utilise le bouton « Ajouter ».");
+// Autocompletion Google Places via le composant officiel <gmpx-place-picker>.
+// Quand l'utilisateur choisit un lieu, on l'ajoute a la liste (nom + adresse).
+$("place-picker").addEventListener("gmpx-placechange", () => {
+  const picker = $("place-picker");
+  const place = picker.value;
+  if (!place || !place.displayName) return;
+  const name = place.displayName;
+  const address = place.formattedAddress || "";
+  let mapsUrl;
+  if (place.id) {
+    mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
+      encodeURIComponent(name) + "&query_place_id=" + place.id;
+  } else {
+    mapsUrl = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(name);
   }
-}
-
-function addSuggestion(s) {
-  const pid = s.placeId ? "&query_place_id=" + s.placeId : "";
-  placeVenues.push({
-    name: s.name,
-    address: s.address || "",
-    mapsUrl: "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(s.name) + pid,
-    selected: true, custom: true
-  });
-  $("place-custom-input").value = "";
-  $("place-suggestions").innerHTML = "";
+  placeVenues.push({ name, address, mapsUrl, selected: true, custom: true });
+  // Reinitialise le champ pour permettre d'en ajouter un autre.
+  try { picker.value = null; } catch (_) {}
   renderPlaceVenues();
-}
+});
 
 async function openPlaceSheet() {
   if (!activeChat) return;
   if (!currentProfile.location) { toast("Active ta localisation dans ton profil."); return; }
   placeWhen = null; placeVenues = [];
   $("place-venues").innerHTML = "";
-  $("place-custom-input").value = "";
-  $("place-suggestions").innerHTML = "";
+  try { $("place-picker").value = null; } catch (_) {}
   $("place-status").textContent = "Recherche de lieux…";
   renderPlaceSlots();
   $("place-modal").classList.remove("hidden");
@@ -1725,20 +1695,6 @@ function renderPlaceVenues() {
     row.addEventListener("click", () => { v.selected = !v.selected; renderPlaceVenues(); });
     box.appendChild(row);
   });
-}
-
-// Ajoute un lieu personnalise (texte libre -> recherche Maps autour de la zone)
-function addCustomPlace() {
-  const t = $("place-custom-input").value.trim();
-  if (!t) return;
-  const zone = placeMid ? "/@" + placeMid.lat + "," + placeMid.lng + ",15z" : "";
-  placeVenues.push({
-    name: t, address: "",
-    mapsUrl: "https://www.google.com/maps/search/" + encodeURIComponent(t) + zone,
-    selected: true, custom: true
-  });
-  $("place-custom-input").value = "";
-  renderPlaceVenues();
 }
 
 function renderPlaceSlots() {

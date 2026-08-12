@@ -354,14 +354,18 @@ img.msg-media { cursor: pointer; }
 .place-venue-check { color: var(--accent); width: 20px; flex-shrink: 0; display: flex; justify-content: center; }
 .place-venue-check svg { width: 18px; height: 18px; }
 .place-custom { display: flex; gap: 8px; margin: 8px 0 4px; }
-.place-custom input { flex: 1; padding: 10px 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: var(--radius-s); color: var(--text); }
-.place-custom .btn { margin: 0; flex-shrink: 0; }
-.place-suggestions { display: flex; flex-direction: column; gap: 4px; margin: -2px 0 6px; max-height: 190px; overflow-y: auto; }
-.place-suggestion { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; width: 100%; background: rgba(0,0,0,0.28); border: 1px solid var(--border); border-radius: var(--radius-s); padding: 8px 10px; cursor: pointer; color: var(--text); font-family: var(--font-body); }
-.place-suggestion:hover { background: rgba(0,0,0,0.42); border-color: var(--accent); }
-.place-suggestion .place-venue-name { font-weight: 600; font-size: 0.92rem; }
-.place-suggestion .place-venue-addr { font-size: 0.78rem; color: var(--text-muted); }
-.place-suggestions-note { font-size: 0.8rem; color: var(--text-muted); padding: 6px 4px; }
+/* Composant Google Places <gmpx-place-picker> : theme sombre aligne sur l'appli */
+gmpx-api-loader { display: none; }
+.place-picker {
+  width: 100%;
+  --gmpx-color-surface: #14161d;
+  --gmpx-color-on-surface: var(--text);
+  --gmpx-color-on-surface-variant: var(--text-muted);
+  --gmpx-color-primary: var(--accent);
+  --gmpx-font-family-base: var(--font-body);
+  --gmpx-font-family-headings: var(--font-body);
+  --gmpx-font-size-base: 0.95rem;
+}
 #place-modal .modal-card h4 { margin: 10px 0 8px; }
 
 .msg.place-msg { max-width: 82%; background: transparent; padding: 0; }

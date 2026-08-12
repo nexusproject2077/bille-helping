@@ -8,6 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
+  <!-- Google Places : composant "place picker" (autocompletion officielle) -->
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/@googlemaps/extended-component-library/0.6.15/index.min.js"></script>
 </head>
 <body>
 
@@ -478,11 +480,11 @@
       <h3>Proposer un lieu</h3>
       <p class="hint">Autour d'un point neutre entre vos deux zones. Ta position exacte n'est jamais partagee. Choisis les lieux a proposer, ou ajoute le tien.</p>
       <div id="place-venues" class="place-venues"></div>
+      <!-- Chargeur d'API Google (clé navigateur : DOIT être restreinte par référent HTTP) -->
+      <gmpx-api-loader key="AIzaSyB3-U1MJj3SC19at-jf0c3o7Wc0l76wkKw" solution-channel="GMP_GE_placepicker_v2"></gmpx-api-loader>
       <div class="place-custom">
-        <input type="text" id="place-custom-input" placeholder="Rechercher un lieu..." maxlength="80" autocomplete="off" />
-        <button id="btn-place-add" class="btn btn-ghost btn-small">Ajouter</button>
+        <gmpx-place-picker id="place-picker" class="place-picker" placeholder="Rechercher un lieu…"></gmpx-place-picker>
       </div>
-      <div id="place-suggestions" class="place-suggestions"></div>
       <h4>Un creneau ?</h4>
       <div id="place-when" class="chips"></div>
       <button id="btn-place-send" class="btn btn-primary btn-block">Proposer</button>
