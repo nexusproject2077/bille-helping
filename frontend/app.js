@@ -1752,8 +1752,38 @@ function renderHomeSaved() {
   }
 }
 
+// Le domicile ne peut etre propose qu'a un match dont l'identite est verifiee.
+let matchVerified = false;
+
+function updateHomeAvailability() {
+  const btn = $("btn-place-home-toggle");
+  const locked = $("place-home-locked");
+  if (matchVerified) {
+    btn.classList.remove("hidden");
+    locked.classList.add("hidden");
+  } else {
+    btn.classList.add("hidden");
+    $("place-home-body").classList.add("hidden");
+    locked.textContent = "Proposer chez toi n'est possible que si " +
+      (activeChat ? activeChat.otherName : "cette personne") +
+      " a verifie son identite.";
+    locked.classList.remove("hidden");
+  }
+}
+
 $("btn-place-home-toggle").addEventListener("click", async () => {
+  if (!matchVerified) return; // securite : bouton normalement masque
   const body = $("place-home-body");
+  const willOpen = body.classList.contains("hidden");
+  // Rappel de securite au tout premier usage.
+  if (willOpen && !localStorage.getItem("bille_home_notice_seen")) {
+    const ok = confirm(
+      "Conseil securite : pour un premier rendez-vous, privilegie un lieu public. " +
+      "Ne partage ton domicile qu'avec une personne en qui tu as vraiment confiance.\n\nContinuer ?"
+    );
+    if (!ok) return;
+    try { localStorage.setItem("bille_home_notice_seen", "1"); } catch (_) {}
+  }
   const nowHidden = body.classList.toggle("hidden");
   if (!nowHidden) {
     await ensureHomeAutocomplete();
@@ -1773,11 +1803,19 @@ async function openPlaceSheet() {
   $("place-home-body").classList.add("hidden");
   try { if (homeAcEl) homeAcEl.value = ""; } catch (_) {}
   $("place-home-remember").checked = false; homeRemember = false;
+  // Le domicile n'est propose que si le match a verifie son identite : on
+  // masque le bouton tant qu'on ne l'a pas confirme (voir plus bas).
+  matchVerified = false;
+  $("btn-place-home-toggle").classList.add("hidden");
+  $("place-home-locked").classList.add("hidden");
   $("place-status").textContent = "Recherche de lieux…";
   renderPlaceSlots();
   $("place-modal").classList.remove("hidden");
   try {
     const otherDoc = await getDoc(doc(db, "users", activeChat.otherUid));
+    // Securite "chez moi" : autorise seulement si le match a verifie son identite.
+    matchVerified = !!(otherDoc.exists() && otherDoc.data().identityVerified);
+    updateHomeAvailability();
     const otherLoc = otherDoc.exists() ? otherDoc.data().location : null;
     if (!otherLoc) { $("place-status").textContent = activeChat.otherName + " n'a pas partage sa zone."; return; }
     // Point median des deux zones DEJA floutees (~1 km) : jamais une position exacte

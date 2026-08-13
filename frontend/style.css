@@ -380,6 +380,7 @@ gmpx-api-loader { display: none; }
 }
 /* Section "Proposer chez moi" (domicile) */
 .place-home { margin: 6px 0 4px; }
+.place-home-locked { font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 6px 4px; }
 .place-home-body { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
 .place-home-warn { display: flex; gap: 8px; align-items: flex-start; font-size: 0.82rem; line-height: 1.4; color: #ffcf8a; background: rgba(255, 180, 84, 0.10); border: 1px solid rgba(255, 180, 84, 0.32); border-radius: var(--radius-s); padding: 9px 11px; }
 .place-home-warn svg { flex-shrink: 0; width: 18px; height: 18px; margin-top: 1px; }
