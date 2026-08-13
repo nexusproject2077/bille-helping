@@ -1670,6 +1670,98 @@ async function onPlaceAcSelect(ev) {
   }
 }
 
+// ----- "Proposer chez moi" : autocompletion d'ADRESSES (domicile) -----
+// Autocompletion distincte, restreinte aux adresses postales (pas de
+// commerces ni de villes), pour partager son domicile a un match.
+const HOME_AC_TYPES = ["street_address", "premise", "subpremise", "route"];
+let homeAcEl = null;
+let homeAcReady = false;
+let homeRemember = false;
+
+async function ensureHomeAutocomplete() {
+  if (homeAcReady) return;
+  const box = $("place-home-ac-container");
+  if (!box || !window.google || !google.maps || !google.maps.importLibrary) return;
+  try {
+    const { PlaceAutocompleteElement } = await google.maps.importLibrary("places");
+    homeAcEl = new PlaceAutocompleteElement({
+      includedPrimaryTypes: HOME_AC_TYPES,
+      includedRegionCodes: PLACE_AC_REGIONS,
+    });
+    homeAcEl.id = "place-home-ac";
+    homeAcEl.classList.add("place-ac-input");
+    box.innerHTML = "";
+    box.appendChild(homeAcEl);
+    homeAcEl.addEventListener("gmp-select", onHomeAcSelect);
+    homeAcReady = true;
+  } catch (e) {
+    console.error("Init autocomplete domicile:", e);
+  }
+}
+
+async function onHomeAcSelect(ev) {
+  try {
+    const pred = ev.placePrediction;
+    if (!pred) return;
+    const place = pred.toPlace();
+    await place.fetchFields({ fields: ["formattedAddress", "location", "id"] });
+    const address = place.formattedAddress || "";
+    if (!address) return;
+    addHomeVenue(address, place.id || "");
+    try { homeAcEl.value = ""; } catch (_) {}
+  } catch (e) {
+    console.error("Selection domicile:", e);
+  }
+}
+
+// Ajoute (ou remplace) le domicile dans la liste des lieux proposes.
+function addHomeVenue(address, placeId) {
+  placeVenues = placeVenues.filter((v) => !v.home); // un seul domicile a la fois
+  const mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
+    encodeURIComponent(address) + (placeId ? "&query_place_id=" + placeId : "");
+  const label = "Chez " + (currentProfile.pseudo || "moi");
+  placeVenues.push({ name: label, address, mapsUrl, home: true, selected: true, custom: true });
+  renderPlaceVenues();
+  if (homeRemember) saveHomeAddress(address, placeId, mapsUrl);
+}
+
+async function saveHomeAddress(address, placeId, mapsUrl) {
+  try {
+    const home = { text: address, placeId: placeId || "", mapsUrl };
+    await updateDoc(doc(db, "users", currentUser.uid), { homeAddress: home });
+    currentProfile.homeAddress = home;
+    renderHomeSaved();
+  } catch (e) {
+    console.error("Enregistrement domicile:", e);
+  }
+}
+
+// Bouton "Utiliser mon adresse enregistree" (si un domicile a ete memorise).
+function renderHomeSaved() {
+  const box = $("place-home-saved");
+  if (!box) return;
+  box.innerHTML = "";
+  const h = currentProfile.homeAddress;
+  if (h && h.text) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn btn-ghost btn-small btn-block";
+    b.textContent = "Utiliser mon adresse enregistree";
+    b.addEventListener("click", () => addHomeVenue(h.text, h.placeId || ""));
+    box.appendChild(b);
+  }
+}
+
+$("btn-place-home-toggle").addEventListener("click", async () => {
+  const body = $("place-home-body");
+  const nowHidden = body.classList.toggle("hidden");
+  if (!nowHidden) {
+    await ensureHomeAutocomplete();
+    renderHomeSaved();
+  }
+});
+$("place-home-remember").addEventListener("change", (e) => { homeRemember = e.target.checked; });
+
 async function openPlaceSheet() {
   if (!activeChat) return;
   if (!currentProfile.location) { toast("Active ta localisation dans ton profil."); return; }
@@ -1677,6 +1769,10 @@ async function openPlaceSheet() {
   $("place-venues").innerHTML = "";
   await ensurePlaceAutocomplete();
   try { if (placeAcEl) placeAcEl.value = ""; } catch (_) {}
+  // Reinitialise la section "chez moi"
+  $("place-home-body").classList.add("hidden");
+  try { if (homeAcEl) homeAcEl.value = ""; } catch (_) {}
+  $("place-home-remember").checked = false; homeRemember = false;
   $("place-status").textContent = "Recherche de lieux…";
   renderPlaceSlots();
   $("place-modal").classList.remove("hidden");
@@ -1725,9 +1821,9 @@ function renderPlaceVenues() {
   placeVenues.forEach((v) => {
     const row = document.createElement("button");
     row.type = "button";
-    row.className = "place-venue" + (v.selected ? " selected" : "");
+    row.className = "place-venue" + (v.selected ? " selected" : "") + (v.home ? " place-venue-home" : "");
     row.innerHTML =
-      '<span class="place-venue-info"><span class="place-venue-name">' + escapeHtmlLite(v.name) + "</span>" +
+      '<span class="place-venue-info"><span class="place-venue-name">' + (v.home ? homeSVG() : "") + escapeHtmlLite(v.name) + "</span>" +
       (v.address ? '<span class="place-venue-addr">' + escapeHtmlLite(v.address) + "</span>" : "") + "</span>" +
       '<span class="place-venue-check">' + (v.selected ? checkSVG() : "") + "</span>";
     row.addEventListener("click", () => { v.selected = !v.selected; renderPlaceVenues(); });
@@ -1753,7 +1849,7 @@ async function sendPlaceMessage() {
   const chosen = placeVenues
     .filter((v) => v.selected)
     .slice(0, 3)
-    .map((v) => ({ name: v.name, address: v.address || "", mapsUrl: v.mapsUrl }));
+    .map((v) => ({ name: v.name, address: v.address || "", mapsUrl: v.mapsUrl, home: !!v.home }));
   if (!chosen.length) { $("place-status").textContent = "Choisis au moins un lieu."; return; }
   try {
     await addDoc(collection(db, "matches", activeChat.matchId, "messages"), {
@@ -1774,8 +1870,14 @@ function renderPlaceMessage(el, msg, isMine) {
   card.className = "place-card";
   let html = '<div class="place-card-head">' + pinSVG() + " Rendez-vous propose</div>";
   (msg.venues || []).forEach((v) => {
-    html += '<a class="place-card-venue" href="' + v.mapsUrl + '" target="_blank" rel="noopener">' +
-      "<span>" + escapeHtmlLite(v.name) + "</span>" + mapSVG() + "</a>";
+    if (v.home) {
+      html += '<a class="place-card-venue place-card-home" href="' + v.mapsUrl + '" target="_blank" rel="noopener">' +
+        '<span class="place-card-home-label">' + homeSVG() + " " + escapeHtmlLite(v.name) + " " + mapSVG() + "</span>" +
+        (v.address ? '<span class="place-card-home-addr">' + escapeHtmlLite(v.address) + "</span>" : "") + "</a>";
+    } else {
+      html += '<a class="place-card-venue" href="' + v.mapsUrl + '" target="_blank" rel="noopener">' +
+        "<span>" + escapeHtmlLite(v.name) + "</span>" + mapSVG() + "</a>";
+    }
   });
   if (msg.when) html += '<div class="place-card-when">' + escapeHtmlLite(msg.when) + "</div>";
   card.innerHTML = html;
@@ -1833,6 +1935,7 @@ function escapeHtmlLite(s) {
 function pinSVG() { return '<svg class="place-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>'; }
 function mapSVG() { return '<svg class="place-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>'; }
 function checkSVG() { return '<svg class="place-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'; }
+function homeSVG() { return '<svg class="place-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>'; }
 function crossSVG() { return '<svg class="place-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>'; }
 
 // ============================================================
