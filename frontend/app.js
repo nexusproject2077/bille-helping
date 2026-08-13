@@ -6,13 +6,16 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
 import {
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-  signOut, onAuthStateChanged, deleteUser
+  signOut, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, updateDoc, getDoc, getDocs, deleteDoc,
   collection, query, where, orderBy, startAt, endAt, addDoc,
   onSnapshot, serverTimestamp, Timestamp
 } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
+import {
+  getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject
+} from "https://www.gstatic.com/firebasejs/12.14.0/firebase-storage.js";
 import {
   geohashForLocation, geohashQueryBounds, distanceBetween
 } from "https://cdn.jsdelivr.net/npm/geofire-common@6.0.0/dist/geofire-common/index.esm.js";
@@ -30,6 +33,73 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
+
+// ===== Backend API (Cloud Run via rewrite Firebase Hosting) =====
+// Par defaut, le frontend appelle "/api/**" en same-origin ; Firebase
+// Hosting redirige vers le service Cloud Run. Pour pointer ailleurs
+// (dev), definir window.__BILLE_API__ avant le chargement de ce script.
+const API_BASE = (typeof window !== "undefined" && window.__BILLE_API__) || "/api";
+
+// Appel authentifie au backend : joint le jeton Firebase de l'utilisateur.
+async function apiFetch(path, options = {}) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Non connecte.");
+  const token = await user.getIdToken();
+  const res = await fetch(API_BASE + path, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token,
+      ...(options.headers || {})
+    }
+  });
+  if (!res.ok) {
+    let msg = "Erreur " + res.status;
+    try { const j = await res.json(); if (j && j.error) msg = j.error; } catch (_) {}
+    throw new Error(msg);
+  }
+  return res;
+}
+
+// Vérifie une photo de profil via le backend (Google Vision / SafeSearch).
+// Renvoie true si autorisée. Fail-open : si le service est indisponible,
+// on n'empêche pas l'ajout (l'admin peut toujours retirer une photo).
+async function photoAllowed(dataUrl) {
+  try {
+    const res = await apiFetch("/photos/check", {
+      method: "POST",
+      body: JSON.stringify({ image: dataUrl })
+    });
+    const j = await res.json();
+    return j.allowed !== false;
+  } catch (e) {
+    console.warn("Vérification photo indisponible :", e.message);
+    return true;
+  }
+}
+
+// ===== Badge « identite verifiee » =====
+// Rendu comme un SVG non selectionnable (impossible a copier-coller comme
+// texte) et pilote UNIQUEMENT par le champ serveur identityVerified : un
+// utilisateur ne peut pas se l'attribuer lui-meme (regles Firestore + backend).
+function verifiedBadge() {
+  const span = document.createElement("span");
+  span.className = "verified-badge";
+  span.title = "Identite verifiee";
+  span.setAttribute("aria-label", "Identite verifiee");
+  span.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' +
+    '<path d="M12 1.8l2.6 1.9 3.2.3 1 3 2.5 2-1.1 3 1.1 3-2.5 2-1 3-3.2.3L12 22.2 9.4 20.3l-3.2-.3-1-3-2.5-2 1.1-3-1.1-3 2.5-2 1-3 3.2-.3z"/>' +
+    '<path d="M8.6 12.3l2.2 2.2 4.4-4.7" fill="none" stroke="#04222a" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>' +
+    "</svg>";
+  return span;
+}
+function setVerifiedBadge(headEl, isVerified) {
+  if (!headEl) return;
+  headEl.querySelectorAll(".verified-badge").forEach((b) => b.remove());
+  if (isVerified) headEl.appendChild(verifiedBadge());
+}
 
 // ===== Constantes =====
 const GRID_DEGREES = 0.01;        // ~1.1 km de floutage
@@ -56,6 +126,7 @@ let onbPhotos = [];           // {url, path}
 let onbInterests = [];
 let onbIntentions = [];
 let swipeQueue = [];          // profils a swiper
+let discoverMode = "foryou";  // "foryou" (compat) | "dispo" (dispo maintenant, par proximite)
 let activeChat = null;        // {matchId, otherUid, otherName}
 let chatUnsub = null;         // unsubscribe du listener chat
 let matchesUnsub = null;
@@ -287,14 +358,17 @@ $("photo-input").addEventListener("change", async (e) => {
   photoStatus("Traitement de la photo...", "");
   try {
     // Compression : max 800px, qualite 0.7 -> reste leger pour Firestore
-    const dataUrl = await compressImage(file, 800, 0.7);
+    let dataUrl = await compressImage(file, 800, 0.7);
     // Securite : Firestore limite un document a 1 Mo. On verifie la taille.
-    if (dataUrl.length > 900000) {
-      const smaller = await compressImage(file, 600, 0.6);
-      onbPhotos.push({ url: smaller });
-    } else {
-      onbPhotos.push({ url: dataUrl });
+    if (dataUrl.length > 900000) dataUrl = await compressImage(file, 600, 0.6);
+    // Moderation : nudite explicite refusee sur les photos de profil
+    photoStatus("Verification de la photo...", "");
+    if (!(await photoAllowed(dataUrl))) {
+      photoStatus("Photo refusee : contenu explicite detecte. Choisis une photo non explicite.", "error");
+      $("photo-input").value = "";
+      return;
     }
+    onbPhotos.push({ url: dataUrl });
     renderOnbPhotos();
     photoStatus("", "");
   } catch (err) {
@@ -415,7 +489,21 @@ document.querySelectorAll(".nav-btn").forEach((btn) => {
 function enterApp() {
   showScreen("app");
   startMatchesListener();  // ecoute globale pour les badges de notification
+  startModnotifListener(); // boite "Moderation" (messages automatiques)
   switchView("discover");
+  revealAdminIfNeeded();   // affiche l'entree "Espace moderation" pour les admins
+}
+
+// Affiche le lien vers le panel admin uniquement si le compte a le claim admin.
+async function revealAdminIfNeeded() {
+  const link = $("admin-link");
+  if (!link || !auth.currentUser) return;
+  try {
+    const res = await auth.currentUser.getIdTokenResult();
+    link.classList.toggle("hidden", res.claims.admin !== true);
+  } catch (_) {
+    link.classList.add("hidden");
+  }
 }
 
 // Ecoute permanente des matchs pour alimenter les pastilles meme hors onglet Messages
@@ -429,6 +517,87 @@ function startMatchesListener() {
     snap.forEach((d) => listenUnread(d.id));
   });
 }
+
+// ============================================================
+// MESSAGES DE LA MODERATION (boite in-app)
+// ============================================================
+let modnotifUnsub = null;
+let modnotifItems = [];
+
+const MODNOTIF_TITLES = {
+  photo_removed: "Une de tes photos a ete retiree",
+  identity_verified: "Ton identite a ete verifiee",
+  identity_rejected: "Verification d'identite refusee",
+  identity_needs_action: "Verification d'identite a refaire",
+  warning: "Avertissement de la moderation",
+  info: "Message de la moderation"
+};
+const MODNOTIF_REASONS = {
+  "contenu-explicite": "Contenu explicite",
+  "photo-non-conforme": "Photo non conforme",
+  "faux-profil": "Faux profil",
+  "harcelement": "Harcelement",
+  "propos-haineux": "Propos haineux",
+  "prostitution": "Sollicitation payante",
+  "autre": "Autre"
+};
+
+function startModnotifListener() {
+  if (modnotifUnsub) modnotifUnsub();
+  const q = query(collection(db, "users", currentUser.uid, "notifications"), orderBy("at", "desc"));
+  modnotifUnsub = onSnapshot(q, (snap) => {
+    modnotifItems = [];
+    snap.forEach((d) => modnotifItems.push({ id: d.id, ...d.data() }));
+    const unread = modnotifItems.filter((n) => !n.read).length;
+    const badge = $("modnotif-badge");
+    if (unread > 0) { badge.textContent = unread > 9 ? "9+" : unread; badge.classList.remove("hidden"); }
+    else badge.classList.add("hidden");
+    if (!$("modnotif-panel").classList.contains("hidden")) renderModnotif();
+  }, (err) => console.warn("modnotif:", err.message));
+}
+
+function renderModnotif() {
+  const list = $("modnotif-list");
+  list.innerHTML = "";
+  if (!modnotifItems.length) { $("no-modnotif").classList.remove("hidden"); return; }
+  $("no-modnotif").classList.add("hidden");
+  modnotifItems.forEach((n) => {
+    const card = document.createElement("div");
+    card.className = "modnotif-item" + (n.read ? "" : " unread");
+    const title = document.createElement("div");
+    title.className = "modnotif-title";
+    title.textContent = MODNOTIF_TITLES[n.type] || MODNOTIF_TITLES.info;
+    card.appendChild(title);
+    if (n.reason) {
+      const r = document.createElement("div");
+      r.className = "modnotif-reason";
+      r.textContent = "Motif : " + (MODNOTIF_REASONS[n.reason] || n.reason);
+      card.appendChild(r);
+    }
+    if (n.note) {
+      const note = document.createElement("div");
+      note.className = "modnotif-note";
+      note.textContent = n.note;
+      card.appendChild(note);
+    }
+    if (n.at && n.at.toDate) {
+      const t = document.createElement("div");
+      t.className = "modnotif-date";
+      t.textContent = n.at.toDate().toLocaleString("fr-FR");
+      card.appendChild(t);
+    }
+    list.appendChild(card);
+  });
+}
+
+$("btn-open-modnotif").addEventListener("click", async () => {
+  $("modnotif-panel").classList.remove("hidden");
+  renderModnotif();
+  for (const n of modnotifItems.filter((x) => !x.read)) {
+    try { await updateDoc(doc(db, "users", currentUser.uid, "notifications", n.id), { read: true }); } catch (_) {}
+  }
+});
+$("btn-modnotif-close").addEventListener("click", () => $("modnotif-panel").classList.add("hidden"));
 
 // ============================================================
 // PROFIL : affichage + visibilite + RGPD
@@ -445,6 +614,20 @@ function renderProfile() {
   });
   $("profile-name").textContent = p.pseudo;
   $("profile-age").textContent = calculateAge(p.birthdate) + " ans";
+  setVerifiedBadge(document.querySelector("#view-profile .profile-head"), p.identityVerified === true);
+  // Etat de la verification d'identite
+  const vSt = $("verify-status"), vBtn = $("btn-verify");
+  if (vSt && vBtn) {
+    if (p.identityVerified === true) {
+      vSt.innerHTML = 'Identite verifiee <svg class="ico-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+      vSt.className = "hint success";
+      vBtn.classList.add("hidden");
+    } else {
+      vSt.textContent = "Ton identite n'est pas encore verifiee.";
+      vSt.className = "hint";
+      vBtn.classList.remove("hidden");
+    }
+  }
   $("profile-bio").textContent = p.bio || "";
 
   // Interets
@@ -572,34 +755,53 @@ $("btn-geo").addEventListener("click", () => {
   }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 });
 });
 
-// ----- RGPD : export -----
-$("btn-export").addEventListener("click", () => {
-  const data = JSON.stringify(currentProfile, null, 2);
-  const blob = new Blob([data], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "mes-donnees-bille-helping.json";
-  a.click();
-  URL.revokeObjectURL(url);
+// ----- Verification d'identite (Stripe Identity via le backend) -----
+$("btn-verify").addEventListener("click", async () => {
+  const btn = $("btn-verify");
+  btn.disabled = true;
+  try {
+    const res = await apiFetch("/verify/start", {
+      method: "POST",
+      body: JSON.stringify({ returnUrl: window.location.href })
+    });
+    const { url } = await res.json();
+    if (url) window.location.href = url;
+    else toast("Verification indisponible pour le moment.");
+  } catch (e) {
+    toast("Erreur : " + e.message);
+  } finally {
+    btn.disabled = false;
+  }
 });
 
-// ----- RGPD : suppression complete du compte -----
+// ----- RGPD : export (genere cote backend Cloud Run) -----
+$("btn-export").addEventListener("click", async () => {
+  try {
+    toast("Preparation de tes donnees...");
+    const res = await apiFetch("/export", { method: "GET" });
+    const data = await res.text(); // deja du JSON formate cote serveur
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "mes-donnees-bille-helping.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert("Erreur lors de l'export : " + e.message);
+  }
+});
+
+// ----- RGPD : suppression complete du compte (cote backend Cloud Run) -----
 $("btn-delete").addEventListener("click", async () => {
   if (!confirm("Supprimer definitivement ton compte et toutes tes donnees ? Cette action est irreversible.")) return;
   try {
-    // Les photos sont en base64 dans le document : le supprimer suffit.
-    await deleteDoc(doc(db, "users", currentUser.uid));
-    // Supprime le compte Auth
-    await deleteUser(currentUser);
+    // Le backend (Admin SDK) supprime le profil, les matchs/messages et le compte Auth.
+    await apiFetch("/account", { method: "DELETE" });
+    await signOut(auth);
     alert("Compte supprime. A bientot !");
   } catch (e) {
-    if (e.code === "auth/requires-recent-login") {
-      alert("Pour des raisons de securite, reconnecte-toi puis reessaie la suppression.");
-      signOut(auth);
-    } else {
-      alert("Erreur : " + e.message);
-    }
+    alert("Erreur lors de la suppression : " + e.message);
   }
 });
 
@@ -624,8 +826,21 @@ function sharedCount(a, b) {
   return a.filter((x) => setB.has(x)).length;
 }
 
-// Score de compatibilite (0-100) : intentions communes > interets communs,
-// bonus proximite et bonus "disponible maintenant".
+// Penalite PROGRESSIVE de complétude (0 = profil complet, jusqu'a ~55).
+// Chaque element manquant pese : plus un profil est incomplet, plus il coule.
+function completenessPenalty(u) {
+  let pen = 0;
+  const photos = Array.isArray(u.photos) ? u.photos.length : 0;
+  const hasBio = typeof u.bio === "string" && u.bio.trim().length >= 10;
+  const hasIntentions = Array.isArray(u.intentions) && u.intentions.length >= 1;
+  if (photos < 2) pen += photos === 0 ? 22 : 13; // 0 photo pire qu'une seule
+  if (!hasBio) pen += 20;
+  if (!hasIntentions) pen += 13;
+  return pen; // max ~55
+}
+
+// Score de compatibilite : intentions communes > interets communs, bonus
+// proximite/disponibilite, GROS bonus verifie, forte penalite si incomplet.
 function compatibilityScore(me, other, distKm, maxRadiusM) {
   let score = 0;
   // Intentions communes : fort poids (jusqu'a 45)
@@ -637,6 +852,10 @@ function compatibilityScore(me, other, distKm, maxRadiusM) {
   score += Math.max(0, 15 * (1 - (distKm / maxKm)));
   // Bonus "disponible maintenant"
   if (isLookingNowActive(other)) score += 10;
+  // Confiance (levier n1) : gros bonus aux profils verifies
+  if (other.identityVerified === true) score += 35;
+  // Qualite (anti-fatigue) : penalite progressive selon la complétude
+  score -= completenessPenalty(other);
   return score;
 }
 
@@ -674,6 +893,8 @@ async function loadSwipeQueue() {
       const data = d.data();
       if (!data.location || !data.profileComplete) continue;
       if (data.visibility && data.visibility.discoverable === false) continue;
+      if (prefs.verifiedOnly && data.identityVerified !== true) continue; // filtre "verifies only"
+      if (discoverMode === "dispo" && !isLookingNowActive(data)) continue; // mode Dispo : actifs seulement
       if (!matchesSeeking(currentProfile, data)) continue;
 
       // Filtre par tranche d'age
@@ -688,8 +909,21 @@ async function loadSwipeQueue() {
       queue.push(item);
     }
   }
-  // Tri par score de compatibilite (decroissant), la distance restant un facteur du score
-  queue.sort((a, b) => b.compat - a.compat);
+
+  // Detecte qui m'a super-like (lecture de leur swipe sur moi, autorisee par
+  // les regles) -> bordure bleue + priorite. Limite aux 30 premiers candidats.
+  await Promise.all(queue.slice(0, 30).map(async (it) => {
+    try {
+      const s = await getDoc(doc(db, "users", it.uid, "swipes", currentUser.uid));
+      it.superLikedMe = s.exists() && s.data().action === "superlike";
+    } catch (_) {}
+  }));
+
+  // Super-likes en tete, puis : proximite en mode Dispo, compatibilite sinon.
+  queue.sort((a, b) =>
+    (b.superLikedMe ? 1 : 0) - (a.superLikedMe ? 1 : 0) ||
+    (discoverMode === "dispo" ? a.distanceKm - b.distanceKm : b.compat - a.compat)
+  );
   swipeQueue = queue;
   renderSwipeCards();
 }
@@ -699,7 +933,9 @@ function renderSwipeCards() {
   stack.innerHTML = "";
   if (swipeQueue.length === 0) {
     $("swipe-empty").classList.remove("hidden");
-    $("swipe-empty").querySelector("p").textContent = "Plus personne dans ton secteur pour l'instant.";
+    $("swipe-empty").querySelector("p").textContent = discoverMode === "dispo"
+      ? "Personne de dispo pres de toi maintenant."
+      : "Plus personne dans ton secteur pour l'instant.";
     return;
   }
   $("swipe-empty").classList.add("hidden");
@@ -745,6 +981,7 @@ function buildCard(item) {
   const name = document.createElement("div");
   name.className = "card-name";
   name.textContent = d.pseudo + (v.age !== false ? ", " + calculateAge(d.birthdate) : "");
+  if (d.identityVerified === true) name.appendChild(verifiedBadge());
   info.appendChild(name);
 
   const meta = document.createElement("div");
@@ -785,21 +1022,34 @@ function buildCard(item) {
     info.appendChild(chips);
   }
 
-  // Stamps LIKE / NOPE
+  // Stamps LIKE / NOPE / SUPER LIKE
   const likeStamp = document.createElement("div");
   likeStamp.className = "swipe-stamp like"; likeStamp.textContent = "LIKE";
   const nopeStamp = document.createElement("div");
   nopeStamp.className = "swipe-stamp nope"; nopeStamp.textContent = "NOPE";
+  const superStamp = document.createElement("div");
+  superStamp.className = "swipe-stamp super"; superStamp.textContent = "SUPER LIKE";
+
+  // Cette personne m'a super-like : bordure bleue + badge etoile
+  if (item.superLikedMe) {
+    card.classList.add("superliked");
+    const slBadge = document.createElement("div");
+    slBadge.className = "card-superlike-badge";
+    slBadge.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> Super Like';
+    card.appendChild(slBadge);
+  }
 
   card.appendChild(photo);
   card.appendChild(grad);
   if (dispo) card.appendChild(dispo);
   card.appendChild(likeStamp);
   card.appendChild(nopeStamp);
+  card.appendChild(superStamp);
   card.appendChild(info);
 
   // Le drag sera active uniquement sur la carte du dessus (voir renderSwipeCards)
-  card._enableDrag = () => enableDrag(card, likeStamp, nopeStamp);
+  card._enableDrag = () => enableDrag(card, likeStamp, nopeStamp, superStamp);
   return card;
 }
 
@@ -808,74 +1058,130 @@ function formatDistance(km) {
   return "a ~" + Math.round(km) + " km";
 }
 
-// ----- Drag tactile / souris -----
-function enableDrag(card, likeStamp, nopeStamp) {
-  let startX = 0, currentX = 0, dragging = false;
+// ----- Drag tactile / souris (gauche=pass, droite=like, haut=super like) -----
+function enableDrag(card, likeStamp, nopeStamp, superStamp) {
+  let startX = 0, startY = 0, currentX = 0, currentY = 0, dragging = false;
 
-  const onStart = (x) => { dragging = true; startX = x; card.style.transition = "none"; };
-  const onMove = (x) => {
+  const onStart = (x, y) => { dragging = true; startX = x; startY = y; card.style.transition = "none"; };
+  const onMove = (x, y) => {
     if (!dragging) return;
-    currentX = x - startX;
+    currentX = x - startX; currentY = y - startY;
     const rot = currentX / 18;
-    card.style.transform = "translateX(" + currentX + "px) rotate(" + rot + "deg)";
-    likeStamp.style.opacity = currentX > 0 ? Math.min(currentX / 100, 1) : 0;
-    nopeStamp.style.opacity = currentX < 0 ? Math.min(-currentX / 100, 1) : 0;
+    card.style.transform = "translate(" + currentX + "px," + currentY + "px) rotate(" + rot + "deg)";
+    const up = currentY < 0 && Math.abs(currentY) > Math.abs(currentX);
+    if (superStamp) superStamp.style.opacity = up ? Math.min(-currentY / 120, 1) : 0;
+    likeStamp.style.opacity = (!up && currentX > 0) ? Math.min(currentX / 100, 1) : 0;
+    nopeStamp.style.opacity = (!up && currentX < 0) ? Math.min(-currentX / 100, 1) : 0;
   };
   const onEnd = () => {
     if (!dragging) return;
     dragging = false;
     card.style.transition = "transform 0.3s ease, opacity 0.3s ease";
-    if (currentX > 110) doSwipe("like");
+    const up = currentY < -120 && Math.abs(currentY) > Math.abs(currentX);
+    if (up) doSwipe("superlike");
+    else if (currentX > 110) doSwipe("like");
     else if (currentX < -110) doSwipe("pass");
     else {
       card.style.transform = "";
       likeStamp.style.opacity = 0; nopeStamp.style.opacity = 0;
+      if (superStamp) superStamp.style.opacity = 0;
     }
-    currentX = 0;
+    currentX = 0; currentY = 0;
   };
 
-  card.addEventListener("mousedown", (e) => onStart(e.clientX));
-  window.addEventListener("mousemove", (e) => onMove(e.clientX));
+  card.addEventListener("mousedown", (e) => onStart(e.clientX, e.clientY));
+  window.addEventListener("mousemove", (e) => onMove(e.clientX, e.clientY));
   window.addEventListener("mouseup", onEnd);
-  card.addEventListener("touchstart", (e) => onStart(e.touches[0].clientX), { passive: true });
-  card.addEventListener("touchmove", (e) => onMove(e.touches[0].clientX), { passive: true });
+  card.addEventListener("touchstart", (e) => onStart(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
+  card.addEventListener("touchmove", (e) => onMove(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
   card.addEventListener("touchend", onEnd);
 }
 
-// Boutons like/pass
+// Modes de decouverte : "Pour toi" (compat) vs "Dispo pres de toi" (proximite)
+function setDiscoverMode(m) {
+  discoverMode = m;
+  $("mode-foryou").classList.toggle("active", m === "foryou");
+  $("mode-dispo").classList.toggle("active", m === "dispo");
+  loadSwipeQueue();
+}
+$("mode-foryou").addEventListener("click", () => setDiscoverMode("foryou"));
+$("mode-dispo").addEventListener("click", () => setDiscoverMode("dispo"));
+
+// Boutons like / pass / super like / rewind
 $("btn-like").addEventListener("click", () => doSwipe("like"));
 $("btn-pass").addEventListener("click", () => doSwipe("pass"));
+$("btn-superlike").addEventListener("click", () => doSwipe("superlike"));
+$("btn-rewind").addEventListener("click", rewindLastSwipe);
 
 // ----- Action de swipe -----
+const SUPERLIKE_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 1 Super Like / 24 h (gratuit)
+let lastSwipe = null; // { item, action, matchId } pour le rewind (annulation 1 niveau)
+
+function isPositive(a) { return a === "like" || a === "superlike"; }
+
 async function doSwipe(action) {
   if (swipeQueue.length === 0) return;
+
+  // Limite Super Like : 1 toutes les 24 h
+  if (action === "superlike") {
+    const last = currentProfile.lastSuperLikeAt;
+    const lastMs = last ? (last.seconds ? last.seconds * 1000 : new Date(last).getTime()) : 0;
+    if (lastMs && Date.now() - lastMs < SUPERLIKE_COOLDOWN_MS) {
+      const h = Math.ceil((SUPERLIKE_COOLDOWN_MS - (Date.now() - lastMs)) / 3600000);
+      toast("1 seul Super Like par jour. Reviens dans ~" + h + " h.");
+      return;
+    }
+  }
+
   const item = swipeQueue[0];
   const topCard = $("card-stack").querySelector('.swipe-card[data-uid="' + item.uid + '"]');
-  if (topCard) topCard.classList.add(action === "like" ? "gone-right" : "gone-left");
+  if (topCard) {
+    topCard.classList.add(action === "superlike" ? "gone-up" : action === "like" ? "gone-right" : "gone-left");
+  }
 
-  // Enregistre le swipe
+  let matchId = null;
   try {
     await setDoc(doc(db, "users", currentUser.uid, "swipes", item.uid), {
-      action, at: serverTimestamp()
+      action, target: item.uid, at: serverTimestamp()
     });
+    if (action === "superlike") {
+      await updateDoc(doc(db, "users", currentUser.uid), { lastSuperLikeAt: serverTimestamp() });
+      currentProfile.lastSuperLikeAt = { seconds: Math.floor(Date.now() / 1000) };
+    }
   } catch (e) { console.error(e); }
 
-  // Si like, verifie le match mutuel
-  if (action === "like") {
+  // Match mutuel : mon action positive + l'autre m'a deja like ou super-like
+  if (isPositive(action)) {
     try {
       const otherSwipe = await getDoc(doc(db, "users", item.uid, "swipes", currentUser.uid));
-      if (otherSwipe.exists() && otherSwipe.data().action === "like") {
-        await createMatch(item);
+      if (otherSwipe.exists() && isPositive(otherSwipe.data().action)) {
+        matchId = await createMatch(item, action === "superlike" || otherSwipe.data().action === "superlike");
       }
     } catch (e) { console.error(e); }
   }
 
+  lastSwipe = { item, action, matchId };
   swipeQueue.shift();
   setTimeout(() => renderSwipeCards(), 300);
 }
 
+// ----- Rewind : revenir sur le dernier profil swipe -----
+async function rewindLastSwipe() {
+  if (!lastSwipe) { toast("Aucun profil a restaurer."); return; }
+  const { item, matchId } = lastSwipe;
+  try {
+    await deleteDoc(doc(db, "users", currentUser.uid, "swipes", item.uid));
+    if (matchId) { try { await deleteDoc(doc(db, "matches", matchId)); } catch (_) {} }
+    swipeQueue.unshift(item);
+    $("swipe-empty").classList.add("hidden");
+    renderSwipeCards();
+    toast("Profil de " + item.data.pseudo + " restaure.");
+  } catch (e) { toast("Erreur : " + e.message); }
+  lastSwipe = null;
+}
+
 // ----- Creation d'un match -----
-async function createMatch(item) {
+async function createMatch(item, isSuper) {
   const matchId = [currentUser.uid, item.uid].sort().join("_");
   try {
     await setDoc(doc(db, "matches", matchId), {
@@ -888,15 +1194,23 @@ async function createMatch(item) {
         [currentUser.uid]: (currentProfile.photos[0] || {}).url || "",
         [item.uid]: (item.data.photos[0] || {}).url || ""
       },
+      superLike: !!isSuper,
       createdAt: serverTimestamp(),
       lastMessage: ""
     });
-    showMatchOverlay(item, matchId);
+    showMatchOverlay(item, matchId, isSuper);
   } catch (e) { console.error("Erreur match :", e); }
+  return matchId;
 }
 
-function showMatchOverlay(item, matchId) {
-  $("match-text").textContent = "Toi et " + item.data.pseudo + " vous etes likes !";
+function showMatchOverlay(item, matchId, isSuper) {
+  $("match-text").textContent = isSuper
+    ? "Super Like ! Toi et " + item.data.pseudo + " vous etes plu !"
+    : "Toi et " + item.data.pseudo + " vous etes likes !";
+  // Nudge Dispo : si les deux sont dispo maintenant, on pousse a se voir vite
+  const bothDispo = isLookingNowActive(currentProfile) && isLookingNowActive(item.data);
+  const nudge = $("match-nudge");
+  if (nudge) nudge.classList.toggle("hidden", !bothDispo);
   $("match-overlay").classList.remove("hidden");
   $("btn-match-continue").onclick = () => $("match-overlay").classList.add("hidden");
   $("btn-match-message").onclick = () => {
@@ -1076,15 +1390,38 @@ function openChat(matchId, otherUid, otherName) {
       const msg = d.data();
       const isMine = msg.from === currentUser.uid;
       const el = document.createElement("div");
-      el.className = "msg " + (isMine ? "sent" : "received");
+      const isMedia = msg.type === "image" || msg.type === "video";
+      const isPlace = msg.type === "place" || msg.type === "place_reply";
+      el.className = "msg " + (isMine ? "sent" : "received") + (isMedia ? " media" : "") + (isPlace ? " place-msg" : "");
 
-      const textSpan = document.createElement("span");
-      textSpan.className = "msg-text";
-      textSpan.textContent = msg.text;
-      el.appendChild(textSpan);
+      if (msg.type === "place") {
+        renderPlaceMessage(el, msg, isMine, matchId);
+      } else if (msg.type === "place_reply") {
+        renderPlaceReply(el, msg, isMine);
+      } else if (msg.type === "image") {
+        const img = document.createElement("img");
+        img.className = "msg-media";
+        img.loading = "lazy";
+        img.src = msg.mediaUrl;
+        img.addEventListener("click", () => openMediaView(msg.mediaUrl, "image"));
+        el.appendChild(img);
+      } else if (msg.type === "video") {
+        const vid = document.createElement("video");
+        vid.className = "msg-media";
+        vid.src = msg.mediaUrl;
+        vid.controls = true;
+        vid.preload = "metadata";
+        vid.setAttribute("playsinline", "");
+        el.appendChild(vid);
+      } else {
+        const textSpan = document.createElement("span");
+        textSpan.className = "msg-text";
+        textSpan.textContent = msg.text;
+        el.appendChild(textSpan);
+      }
 
-      // Ticks uniquement sur MES messages (envoyes par moi)
-      if (isMine) {
+      // Ticks uniquement sur MES messages texte/media (pas sur les cartes lieu)
+      if (isMine && !isPlace) {
         const ticks = document.createElement("span");
         ticks.className = "msg-ticks" + (msg.read ? " read" : "");
         ticks.innerHTML = msg.read ? doubleTickSVG() : singleTickSVG();
@@ -1146,6 +1483,500 @@ $("btn-send").addEventListener("click", sendMessage);
 $("chat-input").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
 
 // ============================================================
+// MEDIAS DU CHAT (images + videos courtes, upload Firebase Storage)
+// ============================================================
+const MEDIA_LIMITS = {
+  imageMaxBytes: 8 * 1024 * 1024,   // 8 Mo (apres compression)
+  videoMaxBytes: 30 * 1024 * 1024,  // 30 Mo
+  videoMaxSeconds: 30,              // 30 s
+  imageMaxPx: 1920,
+  imageQuality: 0.91
+};
+
+$("btn-attach").addEventListener("click", () => $("chat-media-input").click());
+$("chat-media-input").addEventListener("change", handleMediaPick);
+
+async function handleMediaPick(e) {
+  const file = e.target.files[0];
+  e.target.value = ""; // permet de re-choisir le meme fichier
+  if (!file || !activeChat) return;
+
+  const isImage = file.type.startsWith("image/");
+  const isVideo = file.type.startsWith("video/");
+  if (!isImage && !isVideo) { toast("Choisis une image ou une video."); return; }
+
+  try {
+    if (isVideo) {
+      if (file.size > MEDIA_LIMITS.videoMaxBytes) { toast("Video trop lourde (max 30 Mo)."); return; }
+      const dur = await getVideoDuration(file);
+      if (dur > MEDIA_LIMITS.videoMaxSeconds + 0.5) { toast("Video trop longue (max 30 s)."); return; }
+      await uploadMedia(file, "video", fileExtension(file) || "mp4");
+    } else {
+      // Compression douce : 1920 px max, qualite 0.91 -> quasi invisible, poids reduit
+      const blob = await compressImageToBlob(file, MEDIA_LIMITS.imageMaxPx, MEDIA_LIMITS.imageQuality);
+      if (blob.size > MEDIA_LIMITS.imageMaxBytes) { toast("Image trop lourde (max 8 Mo)."); return; }
+      await uploadMedia(blob, "image", "jpg");
+    }
+  } catch (err) {
+    console.error("media pick:", err);
+    toast("Impossible de traiter ce fichier.");
+  }
+}
+
+function fileExtension(file) {
+  const m = /\.([a-z0-9]+)$/i.exec(file.name || "");
+  return m ? m[1].toLowerCase() : "";
+}
+
+// Lit la duree d'une video sans l'afficher
+function getVideoDuration(file) {
+  return new Promise((resolve, reject) => {
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.onloadedmetadata = () => { const d = v.duration; URL.revokeObjectURL(v.src); resolve(d); };
+    v.onerror = () => reject(new Error("Lecture video impossible"));
+    v.src = URL.createObjectURL(file);
+  });
+}
+
+// Compression image -> Blob JPEG
+function compressImageToBlob(file, maxPx, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxPx || height > maxPx) {
+          if (width >= height) { height = Math.round(height * maxPx / width); width = maxPx; }
+          else { width = Math.round(width * maxPx / height); height = maxPx; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("compression"))), "image/jpeg", quality);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Upload vers Storage avec barre de progression, puis message Firestore
+async function uploadMedia(blob, type, ext) {
+  const matchId = activeChat.matchId;
+  const path = `matches/${matchId}/${currentUser.uid}_${Date.now()}.${ext}`;
+  const up = $("chat-upload"), fill = $("chat-upload-fill"), txt = $("chat-upload-txt");
+  up.classList.remove("hidden"); fill.style.width = "0%"; txt.textContent = "Envoi… 0%";
+  $("btn-attach").disabled = true;
+
+  try {
+    const task = uploadBytesResumable(storageRef(storage, path), blob, { contentType: blob.type });
+    task.on("state_changed", (snap) => {
+      const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+      fill.style.width = pct + "%"; txt.textContent = "Envoi… " + pct + "%";
+    });
+    await task;
+    const url = await getDownloadURL(storageRef(storage, path));
+    await addDoc(collection(db, "matches", matchId, "messages"), {
+      from: currentUser.uid, type, mediaUrl: url, mediaPath: path, read: false, at: serverTimestamp()
+    });
+    await updateDoc(doc(db, "matches", matchId), {
+      lastMessage: type === "image" ? "Photo" : "Video",
+      lastMessageAt: serverTimestamp(),
+      lastSender: currentUser.uid
+    });
+  } catch (e) {
+    console.error("upload media:", e);
+    toast("Echec de l'envoi : " + (e.message || e.code || "erreur"));
+  } finally {
+    up.classList.add("hidden");
+    $("btn-attach").disabled = false;
+  }
+}
+
+// Visionneuse plein ecran (image)
+function openMediaView(url, type) {
+  const ov = document.createElement("div");
+  ov.className = "media-viewer";
+  const el = document.createElement(type === "video" ? "video" : "img");
+  el.src = url;
+  if (type === "video") { el.controls = true; el.setAttribute("playsinline", ""); }
+  ov.appendChild(el);
+  ov.addEventListener("click", () => ov.remove());
+  document.body.appendChild(ov);
+}
+
+// ============================================================
+// PROPOSER UN LIEU (point median floute + Google Places)
+// ============================================================
+const PLACE_SLOTS = ["Ce soir 19h", "Demain", "Ce week-end"];
+let placeMid = null;
+let placeVenues = [];
+let placeWhen = null;
+
+$("btn-place").addEventListener("click", openPlaceSheet);
+$("btn-place-cancel").addEventListener("click", () => $("place-modal").classList.add("hidden"));
+$("btn-place-send").addEventListener("click", sendPlaceMessage);
+
+// Autocompletion Google Places, personnalisee pour l'appli via
+// PlaceAutocompleteElement : on ne propose que des LIEUX DE SORTIE
+// (resto/cafe/bar/boulangerie/parc), pas des pays ni des villes, et on
+// biaise les resultats autour du point median des deux zones.
+const PLACE_AC_TYPES = ["restaurant", "cafe", "bar", "bakery", "park"];
+const PLACE_AC_REGIONS = ["fr"];
+let placeAcEl = null;
+let placeAcReady = false;
+
+async function ensurePlaceAutocomplete() {
+  if (placeAcReady) return;
+  const box = $("place-ac-container");
+  if (!box || !window.google || !google.maps || !google.maps.importLibrary) return;
+  try {
+    const { PlaceAutocompleteElement } = await google.maps.importLibrary("places");
+    placeAcEl = new PlaceAutocompleteElement({
+      includedPrimaryTypes: PLACE_AC_TYPES,
+      includedRegionCodes: PLACE_AC_REGIONS,
+    });
+    placeAcEl.id = "place-ac";
+    placeAcEl.classList.add("place-ac-input");
+    box.innerHTML = "";
+    box.appendChild(placeAcEl);
+    placeAcEl.addEventListener("gmp-select", onPlaceAcSelect);
+    placeAcReady = true;
+  } catch (e) {
+    console.error("Init autocomplete Places:", e);
+  }
+}
+
+async function onPlaceAcSelect(ev) {
+  try {
+    const pred = ev.placePrediction;
+    if (!pred) return;
+    const place = pred.toPlace();
+    await place.fetchFields({ fields: ["displayName", "formattedAddress", "location", "id"] });
+    const name = place.displayName || "";
+    if (!name) return;
+    const address = place.formattedAddress || "";
+    const mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
+      encodeURIComponent(name) + (place.id ? "&query_place_id=" + place.id : "");
+    placeVenues.push({ name, address, mapsUrl, selected: true, custom: true });
+    try { placeAcEl.value = ""; } catch (_) {}
+    renderPlaceVenues();
+  } catch (e) {
+    console.error("Selection lieu:", e);
+  }
+}
+
+// ----- "Proposer chez moi" : autocompletion d'ADRESSES (domicile) -----
+// Autocompletion distincte, restreinte aux adresses postales (pas de
+// commerces ni de villes), pour partager son domicile a un match.
+const HOME_AC_TYPES = ["street_address", "premise", "subpremise", "route"];
+let homeAcEl = null;
+let homeAcReady = false;
+let homeRemember = false;
+
+async function ensureHomeAutocomplete() {
+  if (homeAcReady) return;
+  const box = $("place-home-ac-container");
+  if (!box || !window.google || !google.maps || !google.maps.importLibrary) return;
+  try {
+    const { PlaceAutocompleteElement } = await google.maps.importLibrary("places");
+    homeAcEl = new PlaceAutocompleteElement({
+      includedPrimaryTypes: HOME_AC_TYPES,
+      includedRegionCodes: PLACE_AC_REGIONS,
+    });
+    homeAcEl.id = "place-home-ac";
+    homeAcEl.classList.add("place-ac-input");
+    box.innerHTML = "";
+    box.appendChild(homeAcEl);
+    homeAcEl.addEventListener("gmp-select", onHomeAcSelect);
+    homeAcReady = true;
+  } catch (e) {
+    console.error("Init autocomplete domicile:", e);
+  }
+}
+
+async function onHomeAcSelect(ev) {
+  try {
+    const pred = ev.placePrediction;
+    if (!pred) return;
+    const place = pred.toPlace();
+    await place.fetchFields({ fields: ["formattedAddress", "location", "id"] });
+    const address = place.formattedAddress || "";
+    if (!address) return;
+    addHomeVenue(address, place.id || "");
+    try { homeAcEl.value = ""; } catch (_) {}
+  } catch (e) {
+    console.error("Selection domicile:", e);
+  }
+}
+
+// Ajoute (ou remplace) le domicile dans la liste des lieux proposes.
+function addHomeVenue(address, placeId) {
+  placeVenues = placeVenues.filter((v) => !v.home); // un seul domicile a la fois
+  const mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
+    encodeURIComponent(address) + (placeId ? "&query_place_id=" + placeId : "");
+  const label = "Chez " + (currentProfile.pseudo || "moi");
+  placeVenues.push({ name: label, address, mapsUrl, home: true, selected: true, custom: true });
+  renderPlaceVenues();
+  if (homeRemember) saveHomeAddress(address, placeId, mapsUrl);
+}
+
+async function saveHomeAddress(address, placeId, mapsUrl) {
+  try {
+    const home = { text: address, placeId: placeId || "", mapsUrl };
+    await updateDoc(doc(db, "users", currentUser.uid), { homeAddress: home });
+    currentProfile.homeAddress = home;
+    renderHomeSaved();
+  } catch (e) {
+    console.error("Enregistrement domicile:", e);
+  }
+}
+
+// Bouton "Utiliser mon adresse enregistree" (si un domicile a ete memorise).
+function renderHomeSaved() {
+  const box = $("place-home-saved");
+  if (!box) return;
+  box.innerHTML = "";
+  const h = currentProfile.homeAddress;
+  if (h && h.text) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn btn-ghost btn-small btn-block";
+    b.textContent = "Utiliser mon adresse enregistree";
+    b.addEventListener("click", () => addHomeVenue(h.text, h.placeId || ""));
+    box.appendChild(b);
+  }
+}
+
+// Le domicile ne peut etre propose qu'a un match dont l'identite est verifiee.
+let matchVerified = false;
+
+function updateHomeAvailability() {
+  const btn = $("btn-place-home-toggle");
+  const locked = $("place-home-locked");
+  if (matchVerified) {
+    btn.classList.remove("hidden");
+    locked.classList.add("hidden");
+  } else {
+    btn.classList.add("hidden");
+    $("place-home-body").classList.add("hidden");
+    locked.textContent = "Proposer chez toi n'est possible que si " +
+      (activeChat ? activeChat.otherName : "cette personne") +
+      " a verifie son identite.";
+    locked.classList.remove("hidden");
+  }
+}
+
+$("btn-place-home-toggle").addEventListener("click", async () => {
+  if (!matchVerified) return; // securite : bouton normalement masque
+  const body = $("place-home-body");
+  const willOpen = body.classList.contains("hidden");
+  // Rappel de securite au tout premier usage.
+  if (willOpen && !localStorage.getItem("bille_home_notice_seen")) {
+    const ok = confirm(
+      "Conseil securite : pour un premier rendez-vous, privilegie un lieu public. " +
+      "Ne partage ton domicile qu'avec une personne en qui tu as vraiment confiance.\n\nContinuer ?"
+    );
+    if (!ok) return;
+    try { localStorage.setItem("bille_home_notice_seen", "1"); } catch (_) {}
+  }
+  const nowHidden = body.classList.toggle("hidden");
+  if (!nowHidden) {
+    await ensureHomeAutocomplete();
+    renderHomeSaved();
+  }
+});
+$("place-home-remember").addEventListener("change", (e) => { homeRemember = e.target.checked; });
+
+async function openPlaceSheet() {
+  if (!activeChat) return;
+  if (!currentProfile.location) { toast("Active ta localisation dans ton profil."); return; }
+  placeWhen = null; placeVenues = [];
+  $("place-venues").innerHTML = "";
+  await ensurePlaceAutocomplete();
+  try { if (placeAcEl) placeAcEl.value = ""; } catch (_) {}
+  // Reinitialise la section "chez moi"
+  $("place-home-body").classList.add("hidden");
+  try { if (homeAcEl) homeAcEl.value = ""; } catch (_) {}
+  $("place-home-remember").checked = false; homeRemember = false;
+  // Le domicile n'est propose que si le match a verifie son identite : on
+  // masque le bouton tant qu'on ne l'a pas confirme (voir plus bas).
+  matchVerified = false;
+  $("btn-place-home-toggle").classList.add("hidden");
+  $("place-home-locked").classList.add("hidden");
+  $("place-status").textContent = "Recherche de lieux…";
+  renderPlaceSlots();
+  $("place-modal").classList.remove("hidden");
+  try {
+    const otherDoc = await getDoc(doc(db, "users", activeChat.otherUid));
+    // Securite "chez moi" : autorise seulement si le match a verifie son identite.
+    matchVerified = !!(otherDoc.exists() && otherDoc.data().identityVerified);
+    updateHomeAvailability();
+    const otherLoc = otherDoc.exists() ? otherDoc.data().location : null;
+    if (!otherLoc) { $("place-status").textContent = activeChat.otherName + " n'a pas partage sa zone."; return; }
+    // Point median des deux zones DEJA floutees (~1 km) : jamais une position exacte
+    placeMid = {
+      lat: (currentProfile.location.lat + otherLoc.lat) / 2,
+      lng: (currentProfile.location.lng + otherLoc.lng) / 2
+    };
+    // Biaise l'autocompletion autour du point median (rayon ~6 km).
+    if (placeAcEl) {
+      try {
+        placeAcEl.locationBias = {
+          center: { lat: placeMid.lat, lng: placeMid.lng },
+          radius: 6000,
+        };
+      } catch (_) {}
+    }
+    let venues = [];
+    try {
+      const res = await apiFetch("/places/nearby?lat=" + placeMid.lat + "&lng=" + placeMid.lng, { method: "GET" });
+      venues = (await res.json()).venues || [];
+    } catch (_) { /* repli ci-dessous */ }
+    if (!venues.length) {
+      // Repli sans Places : lien de recherche Maps autour du point median (zone, pas adresse)
+      venues = [{
+        name: "Cafes & bars a proximite", address: "",
+        mapsUrl: "https://www.google.com/maps/search/cafe+bar/@" + placeMid.lat + "," + placeMid.lng + ",15z"
+      }];
+    }
+    // Tous selectionnes par defaut ; l'utilisateur peut decocher / ajouter les siens
+    placeVenues = venues.map((v) => ({ ...v, selected: true }));
+    renderPlaceVenues();
+    $("place-status").textContent = "";
+  } catch (e) {
+    $("place-status").textContent = "Erreur : " + e.message;
+  }
+}
+
+function renderPlaceVenues() {
+  const box = $("place-venues");
+  box.innerHTML = "";
+  placeVenues.forEach((v) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "place-venue" + (v.selected ? " selected" : "") + (v.home ? " place-venue-home" : "");
+    row.innerHTML =
+      '<span class="place-venue-info"><span class="place-venue-name">' + (v.home ? homeSVG() : "") + escapeHtmlLite(v.name) + "</span>" +
+      (v.address ? '<span class="place-venue-addr">' + escapeHtmlLite(v.address) + "</span>" : "") + "</span>" +
+      '<span class="place-venue-check">' + (v.selected ? checkSVG() : "") + "</span>";
+    row.addEventListener("click", () => { v.selected = !v.selected; renderPlaceVenues(); });
+    box.appendChild(row);
+  });
+}
+
+function renderPlaceSlots() {
+  const box = $("place-when");
+  box.innerHTML = "";
+  PLACE_SLOTS.forEach((s) => {
+    const chip = document.createElement("button");
+    chip.className = "chip" + (placeWhen === s ? " selected" : "");
+    chip.textContent = s;
+    chip.addEventListener("click", () => { placeWhen = placeWhen === s ? null : s; renderPlaceSlots(); });
+    box.appendChild(chip);
+  });
+}
+
+async function sendPlaceMessage() {
+  if (!activeChat) return;
+  // On n'envoie que les lieux coches (nettoyes des champs internes)
+  const chosen = placeVenues
+    .filter((v) => v.selected)
+    .slice(0, 3)
+    .map((v) => ({ name: v.name, address: v.address || "", mapsUrl: v.mapsUrl, home: !!v.home }));
+  if (!chosen.length) { $("place-status").textContent = "Choisis au moins un lieu."; return; }
+  try {
+    await addDoc(collection(db, "matches", activeChat.matchId, "messages"), {
+      from: currentUser.uid, type: "place",
+      venues: chosen, when: placeWhen || null,
+      read: false, at: serverTimestamp()
+    });
+    await updateDoc(doc(db, "matches", activeChat.matchId), {
+      lastMessage: "Rendez-vous propose", lastMessageAt: serverTimestamp(), lastSender: currentUser.uid
+    });
+    $("place-modal").classList.add("hidden");
+  } catch (e) { $("place-status").textContent = "Erreur : " + e.message; }
+}
+
+// Carte "Rendez-vous propose" (avec reponses pour le destinataire)
+function renderPlaceMessage(el, msg, isMine) {
+  const card = document.createElement("div");
+  card.className = "place-card";
+  let html = '<div class="place-card-head">' + pinSVG() + " Rendez-vous propose</div>";
+  (msg.venues || []).forEach((v) => {
+    if (v.home) {
+      html += '<a class="place-card-venue place-card-home" href="' + v.mapsUrl + '" target="_blank" rel="noopener">' +
+        '<span class="place-card-home-label">' + homeSVG() + " " + escapeHtmlLite(v.name) + " " + mapSVG() + "</span>" +
+        (v.address ? '<span class="place-card-home-addr">' + escapeHtmlLite(v.address) + "</span>" : "") + "</a>";
+    } else {
+      html += '<a class="place-card-venue" href="' + v.mapsUrl + '" target="_blank" rel="noopener">' +
+        "<span>" + escapeHtmlLite(v.name) + "</span>" + mapSVG() + "</a>";
+    }
+  });
+  if (msg.when) html += '<div class="place-card-when">' + escapeHtmlLite(msg.when) + "</div>";
+  card.innerHTML = html;
+  if (!isMine) {
+    const actions = document.createElement("div");
+    actions.className = "place-card-actions";
+    const acc = document.createElement("button"); acc.className = "btn btn-primary btn-small"; acc.textContent = "Accepter";
+    acc.addEventListener("click", () => sendPlaceReply("accepted", msg.when || null));
+    const ref = document.createElement("button"); ref.className = "btn btn-ghost btn-small"; ref.textContent = "Refuser";
+    ref.addEventListener("click", () => sendPlaceReply("refused", null));
+    const oth = document.createElement("button"); oth.className = "btn btn-ghost btn-small"; oth.textContent = "Autre creneau";
+    oth.addEventListener("click", () => { const w = prompt("Quel creneau proposes-tu ?", "Demain 20h"); if (w) sendPlaceReply("counter", w); });
+    actions.appendChild(acc); actions.appendChild(ref); actions.appendChild(oth);
+    card.appendChild(actions);
+  }
+  el.appendChild(card);
+}
+
+async function sendPlaceReply(status, when) {
+  if (!activeChat) return;
+  try {
+    await addDoc(collection(db, "matches", activeChat.matchId, "messages"), {
+      from: currentUser.uid, type: "place_reply", status, when: when || null, read: false, at: serverTimestamp()
+    });
+    const label = status === "accepted" ? "Rendez-vous accepte" : status === "refused" ? "Rendez-vous refuse" : "Autre creneau propose";
+    await updateDoc(doc(db, "matches", activeChat.matchId), {
+      lastMessage: label, lastMessageAt: serverTimestamp(), lastSender: currentUser.uid
+    });
+  } catch (e) { toast("Erreur : " + e.message); }
+}
+
+function renderPlaceReply(el, msg, isMine) {
+  const s = msg.status;
+  const txt = s === "accepted" ? "Rendez-vous accepte" + (msg.when ? " (" + msg.when + ")" : "")
+    : s === "refused" ? "Rendez-vous refuse"
+    : "Propose plutot : " + (msg.when || "un autre creneau");
+  const span = document.createElement("span");
+  span.className = "place-reply " + s;
+  span.innerHTML = (s === "accepted" ? checkSVG() : s === "refused" ? crossSVG() : pinSVG()) + " " + escapeHtmlLite(txt);
+  el.appendChild(span);
+  // Si l'AUTRE a refuse ou propose un autre creneau, je peux reproposer un lieu direct
+  if (!isMine && (s === "refused" || s === "counter")) {
+    const btn = document.createElement("button");
+    btn.className = "btn btn-ghost btn-small place-repropose";
+    btn.textContent = "Proposer un autre lieu";
+    btn.addEventListener("click", openPlaceSheet);
+    el.appendChild(btn);
+  }
+}
+
+// --- petits helpers SVG + echappement ---
+function escapeHtmlLite(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function pinSVG() { return '<svg class="place-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>'; }
+function mapSVG() { return '<svg class="place-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>'; }
+function checkSVG() { return '<svg class="place-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'; }
+function homeSVG() { return '<svg class="place-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>'; }
+function crossSVG() { return '<svg class="place-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>'; }
+
+// ============================================================
 // PROFIL DETAILLE (au tap sur une carte ou bouton info)
 // ============================================================
 let detailCurrent = null;
@@ -1162,6 +1993,7 @@ function openDetail(item) {
     gallery.appendChild(img);
   });
   $("detail-name").textContent = d.pseudo;
+  setVerifiedBadge(document.querySelector("#detail-panel .detail-head"), d.identityVerified === true);
   $("detail-age").textContent = (v.age !== false) ? calculateAge(d.birthdate) + " ans" : "";
   $("detail-distance").textContent = (v.distance !== false) ? formatDistance(item.distanceKm) : "";
   $("detail-bio").textContent = (v.bio !== false) ? (d.bio || "") : "";
@@ -1212,21 +2044,14 @@ $("btn-confirm-report").addEventListener("click", async () => {
   const reason = document.querySelector('input[name="report-reason"]:checked');
   if (!reason) { $("report-status").textContent = "Choisis une raison."; $("report-status").className = "status error"; return; }
   try {
-    // Enregistre le signalement (illicite manifeste => traitement prioritaire DSA)
-    const illegal = ILLEGAL_REPORT_REASONS.includes(reason.value);
-    await addDoc(collection(db, "reports"), {
-      reporter: currentUser.uid,
-      reported: reportTarget.uid,
-      reason: reason.value,
-      illegal,
-      priority: illegal ? "urgent" : "normal",
-      status: "pending",
-      at: serverTimestamp()
+    // Le backend enregistre le signalement (priorisation DSA) et bloque l'utilisateur.
+    await apiFetch("/report", {
+      method: "POST",
+      body: JSON.stringify({ reported: reportTarget.uid, reason: reason.value })
     });
-    // Bloque l'utilisateur (ajoute a ma liste de bloques)
+    // Reflete le blocage dans l'etat local (filtrage cote client)
     const blocked = currentProfile.blocked || [];
     if (!blocked.includes(reportTarget.uid)) blocked.push(reportTarget.uid);
-    await updateDoc(doc(db, "users", currentUser.uid), { blocked });
     currentProfile.blocked = blocked;
 
     $("report-modal").classList.add("hidden");
@@ -1256,7 +2081,8 @@ $("btn-chat-unmatch").addEventListener("click", async () => {
   if (!activeChat) return;
   if (!confirm("Supprimer ce match ? La conversation sera perdue.")) return;
   try {
-    await deleteDoc(doc(db, "matches", activeChat.matchId));
+    // Passe par le backend : supprime le match, ses messages ET ses medias.
+    await apiFetch("/matches/" + activeChat.matchId + "/unmatch", { method: "POST" });
     $("chat-menu-modal").classList.add("hidden");
     $("chat-panel").classList.add("hidden");
     switchView("messages");
@@ -1299,8 +2125,8 @@ async function openLikes() {
           if (iSwiped.has(userDoc.id)) continue; // deja traite
           try {
             const theirSwipe = await getDoc(doc(db, "users", userDoc.id, "swipes", currentUser.uid));
-            if (theirSwipe.exists() && theirSwipe.data().action === "like") {
-              likers.push({ uid: userDoc.id, data: userDoc.data() });
+            if (theirSwipe.exists() && isPositive(theirSwipe.data().action)) {
+              likers.push({ uid: userDoc.id, data: userDoc.data(), superLike: theirSwipe.data().action === "superlike" });
             }
           } catch (e) {}
         }
@@ -1311,19 +2137,27 @@ async function openLikes() {
       $("no-likes").classList.remove("hidden");
       return;
     }
+    // Les Super Likes d'abord
+    likers.sort((a, b) => (b.superLike ? 1 : 0) - (a.superLike ? 1 : 0));
     likers.forEach((l) => {
       const card = document.createElement("div");
-      card.className = "like-card";
+      card.className = "like-card" + (l.superLike ? " superliked" : "");
       const img = document.createElement("img");
       if (l.data.photos && l.data.photos[0]) img.src = l.data.photos[0].url;
       const name = document.createElement("div");
       name.className = "like-name";
       name.textContent = l.data.pseudo + ", " + calculateAge(l.data.birthdate);
+      if (l.superLike) {
+        const star = document.createElement("div");
+        star.className = "like-superstar";
+        star.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>';
+        card.appendChild(star);
+      }
       card.appendChild(img);
       card.appendChild(name);
       // Au clic : like en retour -> match direct
       card.addEventListener("click", async () => {
-        await setDoc(doc(db, "users", currentUser.uid, "swipes", l.uid), { action: "like", at: serverTimestamp() });
+        await setDoc(doc(db, "users", currentUser.uid, "swipes", l.uid), { action: "like", target: l.uid, at: serverTimestamp() });
         const dist = currentProfile.location
           ? distanceBetween([l.data.location.lat, l.data.location.lng], [currentProfile.location.lat, currentProfile.location.lng])
           : 0;
@@ -1424,6 +2258,12 @@ $("edit-photo-input").addEventListener("change", async (e) => {
   try {
     let dataUrl = await compressImage(file, 800, 0.7);
     if (dataUrl.length > 900000) dataUrl = await compressImage(file, 600, 0.6);
+    $("edit-photo-status").textContent = "Verification...";
+    if (!(await photoAllowed(dataUrl))) {
+      $("edit-photo-status").textContent = "Photo refusee : contenu explicite detecte.";
+      $("edit-photo-input").value = "";
+      return;
+    }
     editPhotos.push({ url: dataUrl });
     renderEditPhotos();
     $("edit-photo-status").textContent = "";
@@ -1461,6 +2301,7 @@ function initSearchPrefs() {
   $("pref-age-min-val").textContent = p.ageMin;
   $("pref-age-max").value = p.ageMax;
   $("pref-age-max-val").textContent = p.ageMax;
+  if ($("pref-verified-only")) $("pref-verified-only").checked = p.verifiedOnly === true;
 }
 let prefTimer = null;
 function onPrefChange() {
@@ -1474,7 +2315,8 @@ async function saveSearchPrefs() {
   const searchPrefs = {
     maxDistance: parseInt($("pref-distance").value, 10),
     ageMin: parseInt($("pref-age-min").value, 10),
-    ageMax: parseInt($("pref-age-max").value, 10)
+    ageMax: parseInt($("pref-age-max").value, 10),
+    verifiedOnly: $("pref-verified-only") ? $("pref-verified-only").checked : false
   };
   try {
     await updateDoc(doc(db, "users", currentUser.uid), { searchPrefs });
@@ -1485,6 +2327,10 @@ async function saveSearchPrefs() {
   } catch (e) { $("pref-status").textContent = "Erreur."; }
 }
 ["pref-distance", "pref-age-min", "pref-age-max"].forEach((id) => $(id).addEventListener("input", onPrefChange));
+// Le toggle "verifies uniquement" enregistre immediatement puis recharge la pile
+if ($("pref-verified-only")) {
+  $("pref-verified-only").addEventListener("change", async () => { await saveSearchPrefs(); loadSwipeQueue(); });
+}
 
 // ============================================================
 // CGU

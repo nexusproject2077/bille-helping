@@ -215,8 +215,25 @@ textarea { resize: vertical; font-family: var(--font-body); }
 /* On utilise dvh (dynamic viewport height) au lieu de vh : dvh suit la
    hauteur reellement visible quand la barre d'adresse mobile apparait,
    donc la page tient sur un ecran sans defilement. */
-.swipe-area { flex: 1; position: relative; min-height: 0; display: flex; align-items: center; justify-content: center; }
-.card-stack { position: relative; width: 100%; max-width: 360px; height: 68dvh; max-height: 560px; }
+/* Hauteur definie (dvh) : la carte et les boutons forment un groupe centre,
+   les boutons restent juste sous la carte (pas colles en bas de l'ecran). */
+.swipe-area { flex: 0 0 auto; position: relative; min-height: 0; height: 60dvh; max-height: 540px; display: flex; align-items: center; justify-content: center; }
+.card-stack { position: relative; width: 100%; max-width: 360px; height: 100%; }
+#view-discover.view.active { justify-content: center; gap: 8px; }
+
+/* Modes de decouverte : "Pour toi" / "Dispo pres de toi" */
+.discover-modes {
+  display: flex; gap: 6px; width: 100%; max-width: 360px;
+  background: rgba(0,0,0,0.3); padding: 4px; border-radius: 12px; flex-shrink: 0;
+}
+.mode-btn {
+  flex: 1; padding: 9px 10px; border: none; background: transparent;
+  color: var(--text-muted); font-family: var(--font-body); font-weight: 600;
+  font-size: 0.85rem; border-radius: 9px; cursor: pointer; white-space: nowrap;
+  transition: background 0.2s, color 0.2s;
+}
+.mode-btn.active { background: var(--glass-strong); color: var(--text); }
+#mode-dispo.active { color: var(--success); }
 .swipe-card {
   position: absolute; inset: 0; border-radius: var(--radius-l); overflow: hidden;
   background: var(--bg-2); border: 1px solid var(--border);
@@ -239,6 +256,7 @@ textarea { resize: vertical; font-family: var(--font-body); }
 .swipe-card .card-chip { font-size: 0.72rem; padding: 4px 10px; border-radius: 14px; background: rgba(255,255,255,0.18); }
 .swipe-card.gone-left { transform: translateX(-150%) rotate(-18deg); opacity: 0; }
 .swipe-card.gone-right { transform: translateX(150%) rotate(18deg); opacity: 0; }
+.swipe-card.gone-up { transform: translateY(-150%) rotate(-6deg); opacity: 0; }
 
 .swipe-stamp {
   position: absolute; top: 28px; font-family: var(--font-display); font-weight: 700;
@@ -246,19 +264,35 @@ textarea { resize: vertical; font-family: var(--font-body); }
 }
 .swipe-stamp.like { left: 22px; color: var(--like); border-color: var(--like); transform: rotate(-15deg); }
 .swipe-stamp.nope { right: 22px; color: var(--pass); border-color: var(--pass); transform: rotate(15deg); }
+.swipe-stamp.super { left: 50%; transform: translateX(-50%) rotate(-8deg); color: #3aa5ff; border-color: #3aa5ff; font-size: 1.4rem; }
+
+/* Carte de quelqu'un qui m'a super-like : bordure bleue + badge etoile */
+.swipe-card.superliked { border-color: #3aa5ff; box-shadow: 0 0 0 2px #3aa5ff, var(--shadow); }
+.card-superlike-badge {
+  position: absolute; top: 16px; right: 16px; z-index: 3;
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #3aa5ff; color: #04223a; font-size: 0.72rem; font-weight: 700;
+  padding: 5px 11px; border-radius: 14px; box-shadow: 0 2px 10px rgba(58,165,255,0.55);
+}
+.card-superlike-badge svg { width: 13px; height: 13px; }
 
 .swipe-empty { text-align: center; color: var(--text-muted); }
-.swipe-actions { display: flex; justify-content: center; gap: 30px; padding: 20px 0 4px; }
+.swipe-actions { display: flex; justify-content: center; align-items: center; gap: 14px; padding: 16px 0 4px; }
 .circle-btn {
-  width: 64px; height: 64px; border-radius: 50%; border: 1px solid var(--border-strong);
-  background: var(--glass-strong); cursor: pointer;
+  width: 58px; height: 58px; border-radius: 50%; border: 1px solid var(--border-strong);
+  background: var(--glass-strong); cursor: pointer; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center; transition: all 0.2s;
 }
-.circle-btn svg { width: 28px; height: 28px; }
+.circle-btn svg { width: 26px; height: 26px; }
 .circle-btn:active { transform: scale(0.9); }
 .circle-btn.pass { color: var(--pass); }
 .circle-btn.like { color: var(--like); }
 .circle-btn:hover { border-color: currentColor; }
+/* Boutons secondaires (plus petits) : rewind, info, super like */
+.circle-btn.rewind, .circle-btn.superlike { width: 46px; height: 46px; }
+.circle-btn.rewind svg, .circle-btn.superlike svg { width: 20px; height: 20px; }
+.circle-btn.rewind { color: #ffb300; }
+.circle-btn.superlike { color: #3aa5ff; }
 
 /* ===== Messages / matchs ===== */
 .match-list { display: flex; flex-direction: column; gap: 10px; }
@@ -291,8 +325,96 @@ textarea { resize: vertical; font-family: var(--font-body); }
 .msg.sent { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
 .msg.received { align-self: flex-start; background: var(--glass-strong); border-bottom-left-radius: 4px; }
 .chat-input-row { display: flex; gap: 10px; padding: 14px 16px; border-top: 1px solid var(--border); background: var(--bg-1); }
-.chat-input-row input { flex: 1; padding: 12px 15px; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 22px; color: var(--text); }
+.chat-input-row input[type="text"] { flex: 1; padding: 12px 15px; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 22px; color: var(--text); }
 .chat-input-row input:focus { outline: none; border-color: var(--primary); }
+
+/* ===== Medias du chat (images + videos) ===== */
+.attach-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; flex-shrink: 0; padding: 6px; display: flex; align-items: center; justify-content: center; }
+.attach-btn svg { width: 24px; height: 24px; }
+.attach-btn:hover { color: var(--text); }
+.attach-btn:disabled { opacity: 0.4; cursor: default; }
+.msg.media { padding: 4px; background: rgba(255,255,255,0.06); }
+.msg-media { display: block; max-width: 240px; max-height: 320px; border-radius: 12px; background: var(--bg-2); }
+img.msg-media { cursor: pointer; }
+.chat-upload { padding: 8px 16px; display: flex; align-items: center; gap: 10px; background: var(--bg-1); border-top: 1px solid var(--border); }
+.chat-upload-bar { flex: 1; height: 6px; border-radius: 6px; background: rgba(0,0,0,0.4); overflow: hidden; }
+.chat-upload-bar i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: width 0.2s; }
+.chat-upload-txt { font-size: 0.8rem; color: var(--text-muted); min-width: 88px; text-align: right; }
+.media-viewer { position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,0.92); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.media-viewer img, .media-viewer video { max-width: 100%; max-height: 100%; border-radius: 8px; }
+
+/* ===== Proposer un lieu ===== */
+.place-venues { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 6px; }
+.place-venue { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; background: var(--glass); border: 1px solid var(--border); border-radius: var(--radius-s); padding: 10px 12px; cursor: pointer; color: var(--text); font-family: var(--font-body); transition: border-color 0.15s, opacity 0.15s; }
+.place-venue:not(.selected) { opacity: 0.55; }
+.place-venue.selected { border-color: var(--accent); }
+.place-venue-info { display: flex; flex-direction: column; min-width: 0; }
+.place-venue-name { font-weight: 600; font-size: 0.92rem; }
+.place-venue-addr { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+.place-venue-check { color: var(--accent); width: 20px; flex-shrink: 0; display: flex; justify-content: center; }
+.place-venue-check svg { width: 18px; height: 18px; }
+.place-custom { display: flex; gap: 8px; margin: 8px 0 4px; }
+gmpx-api-loader { display: none; }
+/* Autocompletion Google Places (PlaceAutocompleteElement) : theme sombre */
+.place-ac-container { width: 100%; }
+.place-ac-container gmp-place-autocomplete,
+.place-ac-input {
+  width: 100%;
+  /* Fond du champ ET de la liste deroulante */
+  --gmp-mat-color-surface: #14161d;
+  --gmp-mat-color-surface-container-low: #14161d;
+  --gmp-mat-color-surface-container: #171922;
+  --gmp-mat-color-surface-container-high: #1b1e27;
+  /* Fond de la ligne survolee / selectionnee */
+  --gmp-mat-color-surface-container-highest: #232733;
+  /* Textes */
+  --gmp-mat-color-on-surface: var(--text);
+  --gmp-mat-color-on-surface-variant: var(--text-muted);
+  /* Bordures / separateurs */
+  --gmp-mat-color-outline: rgba(255, 255, 255, 0.14);
+  --gmp-mat-color-outline-decorative: rgba(255, 255, 255, 0.10);
+  --gmp-mat-color-hairline: rgba(255, 255, 255, 0.10);
+  /* Accent (focus, icones) */
+  --gmp-mat-color-primary: var(--accent);
+  --gmp-mat-font-family: var(--font-body);
+}
+/* Section "Proposer chez moi" (domicile) */
+.place-home { margin: 6px 0 4px; }
+.place-home-locked { font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 6px 4px; }
+.place-home-body { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.place-home-warn { display: flex; gap: 8px; align-items: flex-start; font-size: 0.82rem; line-height: 1.4; color: #ffcf8a; background: rgba(255, 180, 84, 0.10); border: 1px solid rgba(255, 180, 84, 0.32); border-radius: var(--radius-s); padding: 9px 11px; }
+.place-home-warn svg { flex-shrink: 0; width: 18px; height: 18px; margin-top: 1px; }
+.place-home-remember { display: flex; gap: 8px; align-items: center; font-size: 0.82rem; color: var(--text-muted); cursor: pointer; }
+.place-home-remember input { width: auto; }
+.place-venue-home { border-color: rgba(255, 180, 84, 0.4); }
+.place-venue-home .place-venue-name { display: flex; align-items: center; gap: 6px; }
+.place-card-home { flex-direction: column; align-items: flex-start; gap: 3px; }
+.place-card-home-label { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.place-card-home-addr { font-size: 0.8rem; opacity: 0.85; }
+#place-modal .modal-card h4 { margin: 10px 0 8px; }
+
+.msg.place-msg { max-width: 82%; background: transparent; padding: 0; }
+.place-card { background: var(--glass-strong); border: 1px solid var(--accent); border-radius: var(--radius-m); padding: 12px 14px; }
+.place-card-head { display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--accent); margin-bottom: 8px; }
+.place-card-venue { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; margin-bottom: 6px; background: rgba(0,0,0,0.25); border-radius: var(--radius-s); color: var(--text); text-decoration: none; font-size: 0.88rem; }
+.place-card-venue:hover { background: rgba(0,0,0,0.4); }
+.place-card-when { font-size: 0.82rem; color: var(--text-muted); margin: 4px 0 2px; }
+.place-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.place-card-actions .btn { flex: 1; min-width: 90px; margin: 0; }
+.place-ico { width: 1em; height: 1em; vertical-align: -0.12em; flex-shrink: 0; }
+.place-reply { display: inline-flex; align-items: center; gap: 6px; font-size: 0.88rem; }
+.place-reply.accepted { color: var(--success); }
+.place-reply.refused { color: var(--pass); }
+.place-reply.counter { color: var(--accent); }
+.msg.place-msg { flex-direction: column; }
+.msg.place-msg.sent { align-items: flex-end; }
+.msg.place-msg.received { align-items: flex-start; }
+.place-repropose { margin: 8px 0 0; }
+
+/* ===== Petites icones SVG inline (remplacent les emojis) ===== */
+.btn-ico { width: 1em; height: 1em; vertical-align: -0.12em; margin-right: 3px; }
+.ico-check { width: 0.9em; height: 0.9em; vertical-align: -0.08em; color: var(--accent); margin-left: 3px; }
+.admin-verified svg { width: 0.85em; height: 0.85em; vertical-align: -0.05em; }
 
 /* ===== Profil ===== */
 .profile-photos { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 16px; }
@@ -388,6 +510,11 @@ textarea { resize: vertical; font-family: var(--font-body); }
   margin-bottom: 10px;
 }
 .match-pop p { color: var(--text-muted); margin-bottom: 24px; }
+.match-nudge {
+  color: var(--success) !important; font-weight: 600; margin: -8px 0 20px !important;
+  background: rgba(46,204,113,0.12); border: 1px solid rgba(46,204,113,0.4);
+  border-radius: var(--radius-s); padding: 10px 14px; line-height: 1.4;
+}
 .match-pop .btn { margin-bottom: 10px; width: 100%; }
 
 /* ===== Responsive ===== */
@@ -449,8 +576,8 @@ input, select, textarea {
   font-size: 0.62rem; font-weight: 700; min-width: 16px; height: 16px; border-radius: 8px;
   display: flex; align-items: center; justify-content: center; padding: 0 4px;
 }
-.circle-btn.info { color: var(--accent); width: 52px; height: 52px; }
-.circle-btn.info svg { width: 22px; height: 22px; }
+.circle-btn.info { color: var(--accent); width: 46px; height: 46px; }
+.circle-btn.info svg { width: 20px; height: 20px; }
 .swipe-empty svg { width: 48px; height: 48px; color: var(--text-dim); margin-bottom: 16px; }
 .empty-state svg { width: 48px; height: 48px; color: var(--text-dim); margin-bottom: 16px; }
 
@@ -490,6 +617,9 @@ input, select, textarea {
 .like-card { position: relative; aspect-ratio: 3/4; border-radius: var(--radius-m); overflow: hidden; cursor: pointer; background: var(--bg-2); }
 .like-card img { width: 100%; height: 100%; object-fit: cover; }
 .like-card .like-name { position: absolute; bottom: 0; left: 0; right: 0; padding: 16px 12px 10px; background: linear-gradient(to top, rgba(0,0,0,0.85), transparent); font-weight: 600; font-size: 0.95rem; }
+.like-card.superliked { box-shadow: 0 0 0 2px #3aa5ff; }
+.like-superstar { position: absolute; top: 8px; right: 8px; z-index: 2; width: 22px; height: 22px; color: #3aa5ff; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6)); }
+.like-superstar svg { width: 100%; height: 100%; display: block; }
 
 /* ============================================================ */
 /* MODALES                                                      */
@@ -548,6 +678,81 @@ input, select, textarea {
   animation: dispoPulse 1.4s ease-in-out infinite;
 }
 @keyframes dispoPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ============================================================ */
+/* BADGE « IDENTITE VERIFIEE »                                  */
+/* SVG non selectionnable : ne peut pas etre copie-colle comme  */
+/* texte, et n'est affiche que si identityVerified est vrai      */
+/* (donnee serveur, non modifiable par l'utilisateur).          */
+/* ============================================================ */
+.verified-badge {
+  display: inline-flex; align-self: center; vertical-align: middle;
+  width: 0.9em; height: 0.9em; margin-left: 6px; color: var(--accent);
+  flex-shrink: 0; pointer-events: none;
+  user-select: none; -webkit-user-select: none; -moz-user-select: none;
+  filter: drop-shadow(0 1px 4px rgba(77,208,225,0.5));
+}
+.verified-badge svg { width: 100%; height: 100%; display: block; }
+
+/* ============================================================ */
+/* ESPACE MODÉRATION (admin.html)                              */
+/* ============================================================ */
+.admin-wrap { min-height: 100vh; }
+.admin-dash { max-width: 900px; margin: 0 auto; padding-bottom: 40px; }
+.admin-dash .app-header { justify-content: space-between; }
+.admin-dash .app-title { flex: none; }
+.admin-tabs { display: flex; gap: 8px; padding: 16px 20px 0; }
+.admin-tab {
+  padding: 10px 16px; border: 1px solid var(--border); background: transparent;
+  color: var(--text-muted); font-family: var(--font-body); font-weight: 600;
+  border-radius: var(--radius-s); cursor: pointer; font-size: 0.9rem;
+}
+.admin-tab.active { background: var(--glass-strong); color: var(--text); border-color: var(--border-strong); }
+.admin-panel { padding: 16px 20px; }
+.admin-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.admin-row {
+  display: flex; align-items: center; gap: 14px; padding: 12px;
+  background: var(--glass); border: 1px solid var(--border); border-radius: var(--radius-m);
+}
+.admin-thumb {
+  width: 52px; height: 52px; border-radius: 12px; flex-shrink: 0;
+  background: var(--bg-2) center/cover no-repeat;
+}
+.admin-row-info { flex: 1; min-width: 0; }
+.admin-row-name { font-weight: 600; }
+.admin-row-meta { font-size: 0.82rem; color: var(--text-muted); }
+.admin-verified { color: var(--accent); font-size: 0.78rem; }
+.admin-urgent {
+  color: var(--danger); font-weight: 700; font-size: 0.72rem;
+  border: 1px solid var(--danger); padding: 1px 6px; border-radius: 8px;
+}
+.admin-photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0; }
+.admin-photo { position: relative; aspect-ratio: 3/4; border-radius: var(--radius-s); overflow: hidden; background: var(--bg-2); }
+.admin-photo img { width: 100%; height: 100%; object-fit: cover; }
+.admin-photo-del {
+  position: absolute; top: 5px; right: 5px; width: 26px; height: 26px; border-radius: 50%;
+  border: none; background: rgba(0,0,0,0.7); color: #fff; cursor: pointer; font-size: 1rem; line-height: 1;
+}
+.admin-meta { display: flex; flex-direction: column; gap: 6px; font-size: 0.9rem; color: var(--text-muted); margin-bottom: 16px; }
+.admin-meta strong { color: var(--text); font-weight: 600; }
+.admin-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (min-width: 700px) {
+  .admin-photos { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* ============================================================ */
+/* BOÎTE « MODÉRATION » (messages automatiques)                */
+/* ============================================================ */
+.modnotif-list { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+.modnotif-item {
+  background: var(--glass); border: 1px solid var(--border);
+  border-radius: var(--radius-m); padding: 14px 16px;
+}
+.modnotif-item.unread { border-color: var(--primary); box-shadow: inset 3px 0 0 var(--primary); }
+.modnotif-title { font-weight: 600; margin-bottom: 4px; }
+.modnotif-reason { font-size: 0.85rem; color: var(--accent); margin-bottom: 4px; }
+.modnotif-note { font-size: 0.9rem; color: var(--text-muted); line-height: 1.4; }
+.modnotif-date { font-size: 0.72rem; color: var(--text-dim); margin-top: 6px; }
 
 /* ============================================================ */
 /* VOLET CHAT (2 colonnes) — placeholder + etat par defaut      */

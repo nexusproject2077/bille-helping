@@ -8,6 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
+  <!-- Google Places : composant "place picker" (autocompletion officielle) -->
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/@googlemaps/extended-component-library/0.6.15/index.min.js"></script>
 </head>
 <body>
 
@@ -167,6 +169,10 @@
     <header class="app-header">
       <div class="brand-mark small"></div>
       <span class="app-title">Bille Helping</span>
+      <button id="btn-open-modnotif" class="header-action" title="Messages de la moderation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+        <span id="modnotif-badge" class="header-badge hidden">0</span>
+      </button>
       <button id="btn-open-likes" class="header-action" title="Qui m'a like">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"></path></svg>
         <span id="likes-badge" class="header-badge hidden">0</span>
@@ -175,6 +181,10 @@
 
     <!-- ===== DÉCOUVRIR ===== -->
     <section id="view-discover" class="view active">
+      <div class="discover-modes">
+        <button id="mode-foryou" class="mode-btn active">Pour toi</button>
+        <button id="mode-dispo" class="mode-btn"><svg class="btn-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="13 2 3 14 11 14 11 22 21 10 13 10 13 2"></polygon></svg>Dispo pres de toi</button>
+      </div>
       <div id="swipe-area" class="swipe-area">
         <div id="swipe-empty" class="swipe-empty hidden">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -184,8 +194,14 @@
         <div id="card-stack" class="card-stack"></div>
       </div>
       <div id="swipe-actions" class="swipe-actions">
+        <button id="btn-rewind" class="circle-btn rewind" title="Revenir sur le dernier profil">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+        </button>
         <button id="btn-pass" class="circle-btn pass" title="Passer">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+        <button id="btn-superlike" class="circle-btn superlike" title="Super Like">
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
         </button>
         <button id="btn-info" class="circle-btn info" title="Voir le profil">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
@@ -235,6 +251,12 @@
 
       <div class="profile-settings">
       <div class="profile-section">
+        <h3>Verification d'identite</h3>
+        <p id="verify-status" class="hint">Ton identite n'est pas encore verifiee.</p>
+        <button id="btn-verify" class="btn btn-ghost btn-small">Verifier mon identite</button>
+        <p class="micro-note">Verification securisee via un prestataire (Stripe Identity). Aucune piece d'identite n'est stockee par Bille Helping.</p>
+      </div>
+      <div class="profile-section">
         <h3>Disponibilite</h3>
         <label class="toggle-row"><span>Disponible maintenant</span><input type="checkbox" id="looking-now" class="toggle" /></label>
         <p class="micro-note">Affiche un badge « Dispo » sur ta carte pendant 3 h, puis se desactive automatiquement.</p>
@@ -253,6 +275,7 @@
 
       <div class="profile-section">
         <h3>Preferences de recherche</h3>
+        <label class="toggle-row"><span>Profils verifies uniquement</span><input type="checkbox" id="pref-verified-only" class="toggle" /></label>
         <div class="pref-row">
           <label for="pref-distance">Distance maximale : <span id="pref-distance-val">50</span> km</label>
           <input type="range" id="pref-distance" min="1" max="100" value="50" class="range" />
@@ -278,6 +301,7 @@
       <div class="profile-section">
         <h3>Aide & infos</h3>
         <button id="btn-show-cgu" class="btn btn-ghost btn-small btn-block">Conditions & confidentialite</button>
+        <a id="admin-link" href="admin.html" class="btn btn-ghost btn-small btn-block hidden">Espace moderation</a>
       </div>
 
       <div class="profile-section danger-zone">
@@ -320,7 +344,18 @@
       </button>
     </div>
     <div id="chat-messages" class="chat-messages"></div>
+    <div id="chat-upload" class="chat-upload hidden">
+      <div class="chat-upload-bar"><i id="chat-upload-fill"></i></div>
+      <span id="chat-upload-txt" class="chat-upload-txt">Envoi&hellip; 0%</span>
+    </div>
     <div class="chat-input-row">
+      <input type="file" id="chat-media-input" accept="image/*,video/*" class="hidden" />
+      <button id="btn-attach" class="attach-btn" title="Envoyer une photo ou une video">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path></svg>
+      </button>
+      <button id="btn-place" class="attach-btn" title="Proposer un lieu de rencontre">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+      </button>
       <input type="text" id="chat-input" placeholder="Ecris un message..." maxlength="500" />
       <button id="btn-send" class="send-btn" title="Envoyer">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
@@ -363,6 +398,23 @@
     <div id="no-likes" class="empty-state hidden">
       <p>Personne ne t'a like pour l'instant.</p>
       <p class="hint">Continue a swiper !</p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- MESSAGES DE LA MODÉRATION (plein écran)                     -->
+  <!-- ============================================================ -->
+  <div id="modnotif-panel" class="likes-panel hidden">
+    <div class="chat-header">
+      <button id="btn-modnotif-close" class="back-btn" title="Retour">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+      </button>
+      <span class="chat-with">Moderation</span>
+    </div>
+    <div id="modnotif-list" class="modnotif-list"></div>
+    <div id="no-modnotif" class="empty-state hidden">
+      <p>Aucun message de la moderation.</p>
+      <p class="hint">Tu seras prevenu ici si une action concerne ton compte.</p>
     </div>
   </div>
 
@@ -417,6 +469,37 @@
       <button id="btn-confirm-report" class="btn btn-danger btn-block">Signaler et bloquer</button>
       <button id="btn-cancel-report" class="btn btn-ghost btn-small btn-block">Annuler</button>
       <p id="report-status" class="status"></p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- PROPOSER UN LIEU (modale)                                    -->
+  <!-- ============================================================ -->
+  <div id="place-modal" class="modal hidden">
+    <div class="modal-card">
+      <h3>Proposer un lieu</h3>
+      <p class="hint">Autour d'un point neutre entre vos deux zones. Ta position exacte n'est jamais partagee. Choisis les lieux a proposer, ou ajoute le tien.</p>
+      <div id="place-venues" class="place-venues"></div>
+      <!-- Chargeur d'API Google (clé navigateur : DOIT être restreinte par référent HTTP) -->
+      <gmpx-api-loader key="AIzaSyB3-U1MJj3SC19at-jf0c3o7Wc0l76wkKw" solution-channel="GMP_GE_placepicker_v2"></gmpx-api-loader>
+      <div class="place-custom">
+        <div id="place-ac-container" class="place-ac-container"></div>
+      </div>
+      <div class="place-home">
+        <button id="btn-place-home-toggle" type="button" class="btn btn-ghost btn-small btn-block">Proposer chez moi</button>
+        <p id="place-home-locked" class="place-home-locked hidden"></p>
+        <div id="place-home-body" class="place-home-body hidden">
+          <p class="place-home-warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg><span>En proposant ton domicile, tu partages ton <strong>adresse exacte</strong>. Ne le fais qu'avec une personne en qui tu as confiance.</span></p>
+          <div id="place-home-saved"></div>
+          <div id="place-home-ac-container" class="place-ac-container"></div>
+          <label class="place-home-remember"><input type="checkbox" id="place-home-remember" /> Retenir mon adresse pour la prochaine fois</label>
+        </div>
+      </div>
+      <h4>Un creneau ?</h4>
+      <div id="place-when" class="chips"></div>
+      <button id="btn-place-send" class="btn btn-primary btn-block">Proposer</button>
+      <button id="btn-place-cancel" class="btn btn-ghost btn-small btn-block">Annuler</button>
+      <p id="place-status" class="status"></p>
     </div>
   </div>
 
@@ -490,6 +573,7 @@
     <div class="match-pop">
       <h2>C'est un match !</h2>
       <p id="match-text"></p>
+      <p id="match-nudge" class="match-nudge hidden"><svg class="btn-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="13 2 3 14 11 14 11 22 21 10 13 10 13 2"></polygon></svg>Vous etes tous les deux dispo &mdash; un verre dans le coin ?</p>
       <button id="btn-match-message" class="btn btn-primary">Envoyer un message</button>
       <button id="btn-match-continue" class="btn btn-ghost">Continuer a swiper</button>
     </div>

@@ -1,0 +1,21 @@
+{
+  "name": "bille-backend",
+  "version": "1.0.0",
+  "description": "API backend (Cloud Run) de Bille Helping : operations privilegiees (export RGPD, suppression de compte, signalements) via Firebase Admin SDK.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@google-cloud/vision": "^4.3.2",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "firebase-admin": "^13.0.2",
+    "stripe": "^17.5.0"
+  }
+}

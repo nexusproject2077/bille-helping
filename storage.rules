@@ -18,5 +18,22 @@ service firebase.storage {
       // Suppression : uniquement le proprietaire
       allow delete: if request.auth != null && request.auth.uid == userId;
     }
+
+    // ===== Medias de conversation : dossier matches/{matchId}/ =====
+    // Reserves aux DEUX participants du match (verifie via Firestore).
+    match /matches/{matchId}/{fileName} {
+      function participant() {
+        return request.auth != null
+          && request.auth.uid in firestore.get(/databases/(default)/documents/matches/$(matchId)).data.users;
+      }
+      allow read: if participant();
+      // Image < 8 Mo OU video < 30 Mo
+      allow write: if participant()
+        && (
+          (request.resource.contentType.matches('image/.*') && request.resource.size < 8 * 1024 * 1024)
+          || (request.resource.contentType.matches('video/.*') && request.resource.size < 30 * 1024 * 1024)
+        );
+      allow delete: if participant();
+    }
   }
 }

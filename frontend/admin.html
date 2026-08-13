@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bille Helping — Modération</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="admin-wrap">
+    <!-- Connexion admin -->
+    <div id="admin-login" class="screen auth-screen">
+      <div class="auth-card">
+        <div class="brand">
+          <div class="brand-mark"></div>
+          <h1>Modération</h1>
+          <p class="subtitle">Espace réservé aux administrateurs</p>
+        </div>
+        <div class="field">
+          <label for="admin-email">Adresse e-mail</label>
+          <input type="email" id="admin-email" placeholder="ton@email.com" autocomplete="email" />
+        </div>
+        <div class="field">
+          <label for="admin-password">Mot de passe</label>
+          <input type="password" id="admin-password" placeholder="Mot de passe" autocomplete="current-password" />
+        </div>
+        <button id="admin-login-btn" class="btn btn-primary btn-block">Se connecter</button>
+        <div id="admin-login-status" class="status"></div>
+      </div>
+    </div>
+
+    <!-- Tableau de bord -->
+    <div id="admin-dash" class="admin-dash hidden">
+      <header class="app-header">
+        <div class="brand-mark small"></div>
+        <span class="app-title">Modération</span>
+        <button id="admin-logout" class="btn btn-ghost btn-small">Se déconnecter</button>
+      </header>
+
+      <div class="admin-tabs">
+        <button class="admin-tab active" data-tab="users">Comptes</button>
+        <button class="admin-tab" data-tab="reports">Signalements</button>
+      </div>
+
+      <section id="admin-tab-users" class="admin-panel">
+        <p id="users-status" class="hint">Chargement…</p>
+        <div id="users-list" class="admin-list"></div>
+      </section>
+
+      <section id="admin-tab-reports" class="admin-panel hidden">
+        <p id="reports-status" class="hint">Chargement…</p>
+        <div id="reports-list" class="admin-list"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Détail d'un compte -->
+  <div id="admin-user-modal" class="modal hidden">
+    <div class="modal-card">
+      <button id="admin-user-close" class="link-btn back-link">&larr; Retour</button>
+      <h3 id="admin-user-name">Compte</h3>
+      <p id="admin-user-email" class="hint"></p>
+      <div id="admin-user-photos" class="admin-photos"></div>
+      <div id="admin-user-meta" class="admin-meta"></div>
+      <div class="admin-actions">
+        <button id="admin-verify" class="btn btn-ghost btn-small">Valider l'identité</button>
+        <button id="admin-unverify" class="btn btn-ghost btn-small">Refuser l'identité</button>
+        <button id="admin-warn" class="btn btn-ghost btn-small">Avertir l'utilisateur</button>
+        <button id="admin-delete-user" class="btn btn-danger btn-small">Supprimer le compte</button>
+      </div>
+      <p id="admin-user-status" class="status"></p>
+    </div>
+  </div>
+
+  <div id="admin-toast" class="toast hidden"></div>
+
+  <script type="module" src="admin.js"></script>
+</body>
+</html>
