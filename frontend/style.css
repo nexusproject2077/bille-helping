@@ -354,17 +354,16 @@ img.msg-media { cursor: pointer; }
 .place-venue-check { color: var(--accent); width: 20px; flex-shrink: 0; display: flex; justify-content: center; }
 .place-venue-check svg { width: 18px; height: 18px; }
 .place-custom { display: flex; gap: 8px; margin: 8px 0 4px; }
-/* Composant Google Places <gmpx-place-picker> : theme sombre aligne sur l'appli */
 gmpx-api-loader { display: none; }
-.place-picker {
+/* Autocompletion Google Places (PlaceAutocompleteElement) : pleine largeur */
+.place-ac-container { width: 100%; }
+.place-ac-container gmp-place-autocomplete { width: 100%; }
+.place-ac-input {
   width: 100%;
-  --gmpx-color-surface: #14161d;
-  --gmpx-color-on-surface: var(--text);
-  --gmpx-color-on-surface-variant: var(--text-muted);
-  --gmpx-color-primary: var(--accent);
-  --gmpx-font-family-base: var(--font-body);
-  --gmpx-font-family-headings: var(--font-body);
-  --gmpx-font-size-base: 0.95rem;
+  --gmp-mat-color-surface: #14161d;
+  --gmp-mat-color-on-surface: var(--text);
+  --gmp-mat-color-on-surface-variant: var(--text-muted);
+  --gmp-mat-color-primary: var(--accent);
 }
 #place-modal .modal-card h4 { margin: 10px 0 8px; }
 

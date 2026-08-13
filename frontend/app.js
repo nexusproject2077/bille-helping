@@ -1621,33 +1621,62 @@ $("btn-place").addEventListener("click", openPlaceSheet);
 $("btn-place-cancel").addEventListener("click", () => $("place-modal").classList.add("hidden"));
 $("btn-place-send").addEventListener("click", sendPlaceMessage);
 
-// Autocompletion Google Places via le composant officiel <gmpx-place-picker>.
-// Quand l'utilisateur choisit un lieu, on l'ajoute a la liste (nom + adresse).
-$("place-picker").addEventListener("gmpx-placechange", () => {
-  const picker = $("place-picker");
-  const place = picker.value;
-  if (!place || !place.displayName) return;
-  const name = place.displayName;
-  const address = place.formattedAddress || "";
-  let mapsUrl;
-  if (place.id) {
-    mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
-      encodeURIComponent(name) + "&query_place_id=" + place.id;
-  } else {
-    mapsUrl = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(name);
+// Autocompletion Google Places, personnalisee pour l'appli via
+// PlaceAutocompleteElement : on ne propose que des LIEUX DE SORTIE
+// (resto/cafe/bar/boulangerie/parc), pas des pays ni des villes, et on
+// biaise les resultats autour du point median des deux zones.
+const PLACE_AC_TYPES = ["restaurant", "cafe", "bar", "bakery", "park"];
+const PLACE_AC_REGIONS = ["fr"];
+let placeAcEl = null;
+let placeAcReady = false;
+
+async function ensurePlaceAutocomplete() {
+  if (placeAcReady) return;
+  const box = $("place-ac-container");
+  if (!box || !window.google || !google.maps || !google.maps.importLibrary) return;
+  try {
+    const { PlaceAutocompleteElement } = await google.maps.importLibrary("places");
+    placeAcEl = new PlaceAutocompleteElement({
+      includedPrimaryTypes: PLACE_AC_TYPES,
+      includedRegionCodes: PLACE_AC_REGIONS,
+    });
+    placeAcEl.id = "place-ac";
+    placeAcEl.classList.add("place-ac-input");
+    box.innerHTML = "";
+    box.appendChild(placeAcEl);
+    placeAcEl.addEventListener("gmp-select", onPlaceAcSelect);
+    placeAcReady = true;
+  } catch (e) {
+    console.error("Init autocomplete Places:", e);
   }
-  placeVenues.push({ name, address, mapsUrl, selected: true, custom: true });
-  // Reinitialise le champ pour permettre d'en ajouter un autre.
-  try { picker.value = null; } catch (_) {}
-  renderPlaceVenues();
-});
+}
+
+async function onPlaceAcSelect(ev) {
+  try {
+    const pred = ev.placePrediction;
+    if (!pred) return;
+    const place = pred.toPlace();
+    await place.fetchFields({ fields: ["displayName", "formattedAddress", "location", "id"] });
+    const name = place.displayName || "";
+    if (!name) return;
+    const address = place.formattedAddress || "";
+    const mapsUrl = "https://www.google.com/maps/search/?api=1&query=" +
+      encodeURIComponent(name) + (place.id ? "&query_place_id=" + place.id : "");
+    placeVenues.push({ name, address, mapsUrl, selected: true, custom: true });
+    try { placeAcEl.value = ""; } catch (_) {}
+    renderPlaceVenues();
+  } catch (e) {
+    console.error("Selection lieu:", e);
+  }
+}
 
 async function openPlaceSheet() {
   if (!activeChat) return;
   if (!currentProfile.location) { toast("Active ta localisation dans ton profil."); return; }
   placeWhen = null; placeVenues = [];
   $("place-venues").innerHTML = "";
-  try { $("place-picker").value = null; } catch (_) {}
+  await ensurePlaceAutocomplete();
+  try { if (placeAcEl) placeAcEl.value = ""; } catch (_) {}
   $("place-status").textContent = "Recherche de lieux…";
   renderPlaceSlots();
   $("place-modal").classList.remove("hidden");
@@ -1660,6 +1689,15 @@ async function openPlaceSheet() {
       lat: (currentProfile.location.lat + otherLoc.lat) / 2,
       lng: (currentProfile.location.lng + otherLoc.lng) / 2
     };
+    // Biaise l'autocompletion autour du point median (rayon ~6 km).
+    if (placeAcEl) {
+      try {
+        placeAcEl.locationBias = {
+          center: { lat: placeMid.lat, lng: placeMid.lng },
+          radius: 6000,
+        };
+      } catch (_) {}
+    }
     let venues = [];
     try {
       const res = await apiFetch("/places/nearby?lat=" + placeMid.lat + "&lng=" + placeMid.lng, { method: "GET" });
