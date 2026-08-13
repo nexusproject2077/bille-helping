@@ -355,15 +355,28 @@ img.msg-media { cursor: pointer; }
 .place-venue-check svg { width: 18px; height: 18px; }
 .place-custom { display: flex; gap: 8px; margin: 8px 0 4px; }
 gmpx-api-loader { display: none; }
-/* Autocompletion Google Places (PlaceAutocompleteElement) : pleine largeur */
+/* Autocompletion Google Places (PlaceAutocompleteElement) : theme sombre */
 .place-ac-container { width: 100%; }
-.place-ac-container gmp-place-autocomplete { width: 100%; }
+.place-ac-container gmp-place-autocomplete,
 .place-ac-input {
   width: 100%;
+  /* Fond du champ ET de la liste deroulante */
   --gmp-mat-color-surface: #14161d;
+  --gmp-mat-color-surface-container-low: #14161d;
+  --gmp-mat-color-surface-container: #171922;
+  --gmp-mat-color-surface-container-high: #1b1e27;
+  /* Fond de la ligne survolee / selectionnee */
+  --gmp-mat-color-surface-container-highest: #232733;
+  /* Textes */
   --gmp-mat-color-on-surface: var(--text);
   --gmp-mat-color-on-surface-variant: var(--text-muted);
+  /* Bordures / separateurs */
+  --gmp-mat-color-outline: rgba(255, 255, 255, 0.14);
+  --gmp-mat-color-outline-decorative: rgba(255, 255, 255, 0.10);
+  --gmp-mat-color-hairline: rgba(255, 255, 255, 0.10);
+  /* Accent (focus, icones) */
   --gmp-mat-color-primary: var(--accent);
+  --gmp-mat-font-family: var(--font-body);
 }
 #place-modal .modal-card h4 { margin: 10px 0 8px; }
 
