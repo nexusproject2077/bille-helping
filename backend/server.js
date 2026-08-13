@@ -25,6 +25,20 @@ const db = admin.firestore();
 // Client Google Vision (SafeSearch) — utilise les identifiants du service.
 const visionClient = new vision.ImageAnnotatorClient();
 
+// Bucket Storage (medias de chat + photos). Nom par defaut aligne sur la
+// config du frontend ; surchargable via la variable STORAGE_BUCKET.
+const STORAGE_BUCKET = process.env.STORAGE_BUCKET || "bille-helping.firebasestorage.app";
+
+// Supprime tous les fichiers Storage sous un prefixe (ex: "matches/<id>/").
+// Tolerant : on log l'erreur sans faire echouer l'operation appelante.
+async function deleteStoragePrefix(prefix) {
+  try {
+    await admin.storage().bucket(STORAGE_BUCKET).deleteFiles({ prefix, force: true });
+  } catch (e) {
+    console.error("Purge Storage echouee pour", prefix, e.message);
+  }
+}
+
 // Stripe (verification d'identite) — initialise seulement si la cle est presente,
 // pour que le service demarre normalement tant que Stripe n'est pas configure.
 const stripe = process.env.STRIPE_SECRET_KEY
@@ -201,6 +215,8 @@ async function deleteUserCompletely(uid) {
     .where("users", "array-contains", uid)
     .get();
   for (const m of matchesSnap.docs) {
+    // Purge les medias de chat (images/videos) stockes sous matches/<id>/
+    await deleteStoragePrefix(`matches/${m.id}/`);
     await db.recursiveDelete(m.ref);
   }
 
@@ -215,8 +231,10 @@ async function deleteUserCompletely(uid) {
   }
 
   // 3) Document utilisateur + sa sous-collection swipes (likes ENVOYES).
-  //    Les photos sont en base64 dans le document : rien d'autre a nettoyer.
   await db.recursiveDelete(db.doc(`users/${uid}`));
+
+  // 3bis) Fichiers Storage eventuels de l'utilisateur (photos hors base64).
+  await deleteStoragePrefix(`users/${uid}/`);
 
   // 4) Compte Auth
   await admin.auth().deleteUser(uid).catch((e) => {
@@ -309,6 +327,30 @@ app.delete("/api/account", requireAuth, async (req, res) => {
   } catch (e) {
     console.error("delete account error", e);
     res.status(500).json({ error: "Echec de la suppression du compte." });
+  }
+});
+
+// ============================================================
+// POST /api/matches/:matchId/unmatch — supprime un match
+// (doc + messages + medias de chat). Reserve aux participants.
+// ============================================================
+app.post("/api/matches/:matchId/unmatch", requireAuth, async (req, res) => {
+  const matchId = req.params.matchId;
+  try {
+    const ref = db.doc(`matches/${matchId}`);
+    const snap = await ref.get();
+    if (!snap.exists) return res.json({ deleted: true }); // deja supprime
+    const users = (snap.data() && snap.data().users) || [];
+    if (!users.includes(req.user.uid)) {
+      return res.status(403).json({ error: "Tu ne fais pas partie de ce match." });
+    }
+    // Purge les medias avant de supprimer le match + ses messages.
+    await deleteStoragePrefix(`matches/${matchId}/`);
+    await db.recursiveDelete(ref);
+    res.json({ deleted: true });
+  } catch (e) {
+    console.error("unmatch error", e);
+    res.status(500).json({ error: "Echec de la suppression du match." });
   }
 });
 

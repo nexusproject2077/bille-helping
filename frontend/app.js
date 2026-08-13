@@ -1902,7 +1902,8 @@ $("btn-chat-unmatch").addEventListener("click", async () => {
   if (!activeChat) return;
   if (!confirm("Supprimer ce match ? La conversation sera perdue.")) return;
   try {
-    await deleteDoc(doc(db, "matches", activeChat.matchId));
+    // Passe par le backend : supprime le match, ses messages ET ses medias.
+    await apiFetch("/matches/" + activeChat.matchId + "/unmatch", { method: "POST" });
     $("chat-menu-modal").classList.add("hidden");
     $("chat-panel").classList.add("hidden");
     switchView("messages");
